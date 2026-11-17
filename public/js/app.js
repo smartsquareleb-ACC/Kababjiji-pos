@@ -490,6 +490,30 @@
   $("btnDebts").addEventListener("click", () => debtsModal());
   $("debtsTbl").addEventListener("click", e => { const b = e.target.closest("[data-paydebt]"); if (b) debtsModal(b.dataset.paydebt); });
 
+  /* ---------- clients & debts (owner) ---------- */
+  // Clients are grouped by phone number; each shows what they owe now and every debt they ever had.
+  function renderClients() {
+    const all = db.allDebts && db.allDebts.length ? db.allDebts : db.debts, q = $("clSearch").value.trim().toLowerCase(), qd = q.replace(/\D/g, "");
+    const by = {};
+    for (const d of all) { const k = String(d.phone || "").replace(/\D/g, "") || d.name; (by[k] = by[k] || []).push(d); }
+    let list = Object.values(by).map(ds => { ds.sort((a, b) => b.t - a.t); const open = ds.filter(d => d.status === "open");
+      return { name: ds[0].name, phone: ds[0].phone, ds, open, owed: open.reduce((a, d) => a + d.totalL, 0) }; });
+    list.sort((a, b) => b.owed - a.owed || b.ds[0].t - a.ds[0].t);
+    if (q) list = list.filter(c => c.name.toLowerCase().includes(q) || (qd && String(c.phone).replace(/\D/g, "").includes(qd)));
+    const owedAll = db.debts.reduce((a, d) => a + d.totalL, 0), owing = new Set(db.debts.map(d => String(d.phone).replace(/\D/g, ""))).size;
+    $("clientsSum").innerHTML = `<span class="chip">${T("Owed to the shop", "مستحق للمحل")} <b>${L(owedAll)}</b> · ${U(LtoU(owedAll))}</span><span class="chip">${T("Clients owing", "زباين عليهم")} <b>${owing}</b></span>`;
+    $("clients").innerHTML = list.length ? list.map(c => `<div class="panel" style="margin-top:10px">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+        <div><b style="font-size:19px">${esc(c.name)}</b><br><a href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ""))}">${esc(c.phone)}</a></div>
+        <div style="text-align:end">${c.owed ? `<span style="color:var(--bad);font-weight:800;font-size:19px">${T("Owes", "عليه")} ${L(c.owed)}</span><br><small>${U(LtoU(c.owed))}</small>` : `<span style="color:var(--good);font-weight:700">${T("Paid up", "مدفوع كلو")}</span>`}</div></div>
+      <div class="tbl" style="margin-top:8px"><table><thead><tr><th>${T("Date", "التاريخ")}</th><th>${T("Items", "الأصناف")}</th><th class="n">${T("Amount", "المبلغ")}</th><th></th></tr></thead><tbody>
+      ${c.ds.map(d => `<tr><td>${fmtDate(d.t)}<br><small>${esc(d.byName || "")}</small></td><td>${d.lines.map(l => l.qty + "× " + esc(nameOf(l))).join("، ")}</td><td class="n">${L(d.totalL)}</td>
+        <td>${d.status === "open" ? `<button class="mini" data-clpay="${d.id}">${T("Pay", "ادفع")}</button>` : `<small style="color:var(--good)">${T("Paid", "اندفع")}${d.paidAt ? " " + fmtDate(d.paidAt) : ""}</small>`}</td></tr>`).join("")}
+      </tbody></table></div></div>`).join("") : `<p class="empty">${q ? T("No client found", "ما في زبون هيك") : T("No debts yet", "ما في ديون بعد")}</p>`;
+  }
+  $("clSearch").addEventListener("input", renderClients);
+  $("clients").addEventListener("click", e => { const b = e.target.closest("[data-clpay]"); if (b) debtsModal(b.dataset.clpay); });
+
   /* ---------- settings ---------- */
   let editMenu = null;
   function renderSettings() {
@@ -578,6 +602,7 @@
     if (currentView === "cash") renderCash();
     if (currentView === "report") renderReport();
     if (currentView === "settings") renderSettings();
+    if (currentView === "clients") renderClients();
   }
 
   // Offline badge: sales are kept on the device and sent when the internet is back.

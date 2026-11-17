@@ -21,7 +21,7 @@
     { id: "tita", name: "TITA", role: "owner", order: 2 },
     { id: "abdallah", name: "ABDALLAH", role: "cashier", order: 3 }
   ];
-  const db = { settings: { ...DEFAULT_SETTINGS }, menu: [], state: {}, days: [], sales: [], checks: [], users: [], staff: [], debts: [] };
+  const db = { settings: { ...DEFAULT_SETTINGS }, menu: [], state: {}, days: [], sales: [], checks: [], users: [], staff: [], debts: [], allDebts: [] };
   // account: the Firebase login. user: who is using the app now (the account, or the PIN person on a shared till).
   const Store = { live, db, user: null, account: null, person: null, ready: false, DEFAULT_MENU };
   const emit = () => listeners.forEach(f => f());
@@ -79,11 +79,12 @@
     try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
     if (s && !s.checks) s.checks = [];
     if (s && !s.debts) s.debts = [];
+    if (s && !s.allDebts) s.allDebts = s.debts.map(x => ({ ...x }));
     if (s && !s.staff) s.staff = DEFAULT_STAFF.map(x => ({ ...x }));
     if (s && s.users && !s.users.some(u => u.pos)) s.users.push({ id: "demo-pos", name: "Shop till", email: "pos@demo", role: "owner", pos: true });
     if (!s || !s.menu) s = { settings: { ...DEFAULT_SETTINGS }, menu: DEFAULT_MENU.map(x => ({ ...x })), state: {}, days: [], sales: [],
       users: [{ id: "demo-owner", name: "Owner", email: "owner@demo", role: "owner" }, { id: "demo-cashier", name: "Abdallah", email: "abdallah@demo", role: "cashier" },
-        { id: "demo-pos", name: "Shop till", email: "pos@demo", role: "owner", pos: true }], staff: DEFAULT_STAFF.map(x => ({ ...x })), debts: [] };
+        { id: "demo-pos", name: "Shop till", email: "pos@demo", role: "owner", pos: true }], staff: DEFAULT_STAFF.map(x => ({ ...x })), debts: [], allDebts: [] };
     Object.assign(db, s);
   }
   function demoSave() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
@@ -128,6 +129,8 @@
     ];
     if (owner) {
       jobs.push(watch(fs.collection("days"), s => { db.days = s.docs.map(x => ({ id: x.id, ...x.data() })).sort((a, b) => a.openedAt - b.openedAt); }));
+      // Clients & debts page: every debt ever, paid or not.
+      jobs.push(watch(fs.collection("debts"), s => { db.allDebts = s.docs.map(x => ({ id: x.id, ...x.data() })).sort((a, b) => b.t - a.t); }));
       jobs.push(watch(fs.collection("users"), s => { db.users = s.docs.map(x => ({ id: x.id, ...x.data() })); }));
     }
     await Promise.all(jobs);
@@ -275,7 +278,7 @@
     if (!live) {
       const d = { id: uid(), ...client, lines: sale.lines, totalL: sale.totalL, rate: sale.rate, dayId: sale.dayId, t: sale.t, status: "open", by: Store.user.id, byName: Store.user.name };
       const s = Store.addSale({ ...sale, debt: true, debtId: d.id, label: client.name, ...(checkId ? { checkId } : {}) });
-      db.debts.push(d); if (checkId) db.checks = db.checks.filter(c => c.id !== checkId); demoSave(); emit(); return s;
+      db.debts.push(d); db.allDebts.unshift({ ...d }); if (checkId) db.checks = db.checks.filter(c => c.id !== checkId); demoSave(); emit(); return s;
     }
     const dref = fs.collection("debts").doc(), sref = fs.collection("sales").doc(), b = fs.batch();
     const s = stamp({ ...sale, debt: true, debtId: dref.id, label: client.name, ...(checkId ? { checkId } : {}) });
@@ -289,7 +292,8 @@
   Store.payDebt = (id, pay) => {
     const d = db.debts.find(x => x.id === id); if (!d) return null;
     const sale = { ...pay, lines: [], totalL: d.totalL, debtPay: id, label: d.name, void: false };
-    if (!live) { const s = Store.addSale(sale); db.debts = db.debts.filter(x => x.id !== id); demoSave(); emit(); return s; }
+    if (!live) { const s = Store.addSale(sale); db.debts = db.debts.filter(x => x.id !== id);
+      Object.assign(db.allDebts.find(x => x.id === id) || {}, { status: "paid", paidAt: Date.now(), paidBy: Store.user.name }); demoSave(); emit(); return s; }
     const sref = fs.collection("sales").doc(), b = fs.batch(), s = stamp(sale);
     b.set(sref, s);
     b.update(fs.collection("debts").doc(id), { status: "paid", paidAt: Date.now(), paidDayId: pay.dayId, paidSaleId: sref.id, paidBy: Store.user.name || "" });

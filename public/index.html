@@ -22,6 +22,7 @@
       <button data-view="bread" data-owner hidden data-ar="الخبز">Bread</button>
       <button data-view="cash" data-owner hidden data-ar="فحص الصندوق">Cash check</button>
       <button data-view="report" data-owner hidden data-ar="المبيعات">Sales</button>
+      <button data-view="clients" data-owner hidden data-ar="الزباين والديون">Clients &amp; debts</button>
       <button data-view="settings" data-owner hidden data-ar="الإعدادات">Settings</button>
       <span class="demo" id="demoBox" hidden><label for="demoRole" data-ar="تجربة كـ">Demo as</label><select id="demoRole"><option value="owner" data-ar="المالك">Owner</option><option value="cashier" data-ar="كاشير">Cashier</option><option value="pos" data-ar="تيل مشترك">Shared till</option></select></span>
       <button id="btnSwitch" hidden data-ar="غيّر الشخص">Switch user</button>
@@ -131,6 +132,16 @@
           <div class="close-area"><button class="btn danger" data-close="ask" data-ar="سكّر النهار">Close day</button></div>
         </div>
         <div class="panel"><h2 data-ar="الأيام السابقة">Past days</h2><div class="tbl"><table id="history"></table></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-clients" hidden>
+      <div class="panel">
+        <h2 data-ar="الزباين والديون">Clients &amp; debts</h2>
+        <p class="hint" data-ar="كل زبون عليه دين أو كان عليه. الدين بينسجل من شاشة البيع بـ &quot;سجّل دين&quot;.">Every client who owes, or owed, money. Debts are added on the Sell screen with "Save as debt".</p>
+        <div id="clientsSum" class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
+        <div class="field"><label for="clSearch" data-ar="فتّش بالاسم أو التلفون">Search name or phone</label><input id="clSearch" autocomplete="off"></div>
+        <div id="clients"></div>
       </div>
     </section>
 
