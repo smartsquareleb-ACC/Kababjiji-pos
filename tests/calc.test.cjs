@@ -52,3 +52,8 @@ test("a bread count higher than the day's stock is flagged, not turned into nega
   const c = C.cashCheck({ ...day, cashCount: { usd: 98, lbp: 0 } }, s, rate, b);
   assert.strictEqual(c.byBread, undefined);
 });
+
+test("leftover bread, moves and waste: kept bread is stock, moved and wasted bread is not", () => {
+  const d = { carried: 10, startBundles: 5, startLoose: 0, addedLoaves: 6, breadMoves: [{ type: "move", loaves: 4 }, { type: "waste", loaves: 2 }] };
+  assert.strictEqual(C.breadTotal(d, lpb), 10 + 30 + 6 - 6);
+});

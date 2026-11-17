@@ -70,21 +70,36 @@
 
   /* ---------- start day ---------- */
   function openDayModal() {
-    const last = db.days.filter(d => d.status === "closed").slice(-1)[0];
-    const left = last && last.summary ? last.summary.breadLeftBundles : 20;
+    const last = db.days.filter(d => d.status === "closed").slice(-1)[0], lpb = S().lpb;
+    const h = last && last.summary || {};
+    const leftL = h.breadLeftLoaves != null ? h.breadLeftLoaves : h.breadLeftBundles != null ? h.breadLeftBundles * lpb : 0;
+    const ls = Calc.splitBread(Math.max(0, leftL), lpb);
+    const f = (id, label, v) => `<div class="field"><label for="${id}">${label}</label><input id="${id}" inputmode="numeric" value="${v}"></div>`;
     $("modalRoot").innerHTML = `<div class="modal"><div class="box"><img src="assets/logo.png" alt="Kabab Jiji" style="display:block;width:200px;margin:0 auto 8px"><h3>Start the day</h3>
-    <p class="hint">Enter the bread you are starting with and the cash already in the drawer (the float).</p>
-    <div class="row"><div class="field"><label for="odB">Bread bundles</label><input id="odB" inputmode="numeric" value="${left ?? 20}"></div>
-    <div class="field"><label for="odL">Loose loaves</label><input id="odL" inputmode="numeric" value="0"></div></div>
-    <p class="hint" id="odHint"></p>
-    <div class="row"><div class="field"><label for="odU">Float in US$</label><input id="odU" inputmode="decimal" value="0"></div>
-    <div class="field"><label for="odLBP">Float in LBP</label><input id="odLBP" inputmode="numeric" value="0"></div></div>
+    <h2 style="font-size:15px;margin:12px 0 4px">Bread left from yesterday</h2>
+    <p class="hint">${last ? "Filled in from yesterday's close. Change it if your count is different." : "Enter any bread already in the shop."}</p>
+    <div class="row">${f("odLB", "Bundles", ls.bundles)}${f("odLL", "Loose loaves", ls.loose)}</div>
+    <div class="row">${f("odMove", "Move to main shop (loaves)", 0)}${f("odWaste", "Waste (loaves)", 0)}</div>
+    <h2 style="font-size:15px;margin:12px 0 4px">New bread for today</h2>
+    <div class="row">${f("odB", "Bundles", last ? 0 : 20)}${f("odL", "Loose loaves", 0)}</div>
+    <p class="hint" id="odHint"></p><div class="err" id="odErr"></div>
+    <h2 style="font-size:15px;margin:12px 0 4px">Cash in the drawer (float)</h2>
+    <div class="row"><div class="field"><label for="odU">US$</label><input id="odU" inputmode="decimal" value="0"></div>
+    <div class="field"><label for="odLBP">LBP</label><input id="odLBP" inputmode="numeric" value="0"></div></div>
     <button class="btn primary" style="width:100%" id="odGo">Start selling</button></div></div>`;
-    const hint = () => { const n = num($("odB").value) * S().lpb + num($("odL").value); $("odHint").textContent = `= ${n} loaves (${S().lpb} per bundle) = ${n} sandwiches`; };
-    ["odB", "odL"].forEach(i => $(i).addEventListener("input", hint)); hint();
+    const v = id => Math.max(0, Math.round(num($(id).value)));
+    const calc = () => { const left = v("odLB") * lpb + v("odLL"), mv = v("odMove"), ws = v("odWaste"), nw = v("odB") * lpb + v("odL"); return { left, mv, ws, nw, keep: left - mv - ws }; };
+    const hint = () => { const c = calc();
+      $("odErr").textContent = c.keep < 0 ? `You are moving or wasting ${c.mv + c.ws} loaves but only ${c.left} are left.` : "";
+      $("odHint").innerHTML = `Kept from yesterday <b>${Math.max(0, c.keep)}</b> + new <b>${c.nw}</b> = <b>${Math.max(0, c.keep) + c.nw} loaves</b> to sell today (${lpb} per bundle).`; };
+    ["odLB", "odLL", "odMove", "odWaste", "odB", "odL"].forEach(i => $(i).addEventListener("input", hint)); hint();
     $("odGo").addEventListener("click", async () => {
+      const c = calc(); if (c.keep < 0) return;
       $("odGo").disabled = true;
-      await Store.openDay({ startBundles: Math.max(0, Math.round(num($("odB").value))), startLoose: Math.max(0, Math.round(num($("odL").value))),
+      const t = Date.now(), moves = [];
+      if (c.mv) moves.push({ type: "move", loaves: c.mv, t, note: "from yesterday" });
+      if (c.ws) moves.push({ type: "waste", loaves: c.ws, t, note: "from yesterday" });
+      await Store.openDay({ carried: c.left, breadMoves: moves, startBundles: v("odB"), startLoose: v("odL"),
         openUSD: num($("odU").value), openLBP: Math.round(num($("odLBP").value)) });
       closeModal(); render();
     });
@@ -190,8 +205,12 @@
   function breadText(n) { const s = Calc.splitBread(n, S().lpb); return `${n} loaves (${s.bundles} bundle${Math.abs(s.bundles) === 1 ? "" : "s"} + ${s.loose})`; }
   function renderBread() {
     const d = day(), s = sum();
-    $("breadKV").innerHTML = `<dt>Started with</dt><dd>${d.startBundles} bundles + ${d.startLoose} loose</dd>
+    const moved = (d.breadMoves || []).filter(m => m.type === "move").reduce((a, m) => a + m.loaves, 0), wasted = (d.breadMoves || []).filter(m => m.type === "waste").reduce((a, m) => a + m.loaves, 0);
+    $("breadKV").innerHTML = `<dt>Left from yesterday</dt><dd>${d.carried || 0} loaves</dd>
+    <dt>New bread at the start</dt><dd>${d.startBundles} bundles + ${d.startLoose} loose</dd>
     <dt>Added during the day</dt><dd>${d.addedLoaves || 0} loaves</dd>
+    <dt>Moved to main shop</dt><dd>${moved} loaves</dd>
+    <dt>Waste</dt><dd>${wasted} loaves</dd>
     <dt>Total bread today</dt><dd>${breadText(s.breadTotal)}</dd>
     <dt>Used by recorded sales</dt><dd>${s.breadSold} loaves</dd>
     <dt>Should be left</dt><dd>${breadText(s.breadLeft)}</dd>
@@ -208,6 +227,15 @@
     if (!n) return; await Store.updateDay(day().id, { addedLoaves: (day().addedLoaves || 0) + n });
     $("addBundles").value = 0; $("addLoose").value = 0; toast(`Added ${n} loaves`); render();
   });
+  async function breadOut(type) {
+    const n = Math.round(num($("outBundles").value)) * S().lpb + Math.round(num($("outLoose").value));
+    if (n <= 0) { toast("Enter how much bread"); return; }
+    if (n > sum().breadLeft) { toast(`Only ${sum().breadLeft} loaves should be left`); return; }
+    await Store.updateDay(day().id, { breadMoves: [...(day().breadMoves || []), { type, loaves: n, t: Date.now() }] });
+    $("outBundles").value = 0; $("outLoose").value = 0; toast(type === "move" ? `${n} loaves moved to the main shop` : `${n} loaves marked as waste`); render();
+  }
+  $("btnMove").addEventListener("click", () => breadOut("move"));
+  $("btnWaste").addEventListener("click", () => breadOut("waste"));
   $("btnCountBread").addEventListener("click", async () => {
     if ($("cntBundles").value === "" && $("cntLoose").value === "") { toast("Enter the bread you counted"); return; }
     const bundles = Math.max(0, Math.round(num($("cntBundles").value))), loose = Math.max(0, Math.round(num($("cntLoose").value)));
@@ -273,7 +301,7 @@
     if (what === "yes" && day()) {
       const s = sum(), br = bread(), c = Calc.cashCheck(day(), s, R(), br), left = br && !br.invalid ? br.counted : s.breadLeft;
       await Store.closeDay(day().id, { salesL: s.totalL, orders: s.orders, sandwiches: s.breadSold, breadMissing: br && !br.invalid ? br.missing : null,
-        drawerDiff: c ? c.diff : null, breadLeftBundles: Math.floor(left / S().lpb), rate: R() });
+        drawerDiff: c ? c.diff : null, breadLeftBundles: Math.floor(left / S().lpb), breadLeftLoaves: left, rate: R() });
       document.querySelectorAll(".close-area").forEach(a => a.innerHTML = closeBtn); toast("Day closed"); go("sell");
     }
   });

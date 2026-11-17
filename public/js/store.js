@@ -160,7 +160,7 @@
 
   Store.openDay = d => {
     const id = new Date().toISOString().slice(0, 10) + "-" + uid().slice(0, 4);
-    const day = { ...d, status: "open", openedAt: Date.now(), addedLoaves: 0, breadCount: null, cashCount: null };
+    const day = { breadMoves: [], carried: 0, ...d, status: "open", openedAt: Date.now(), addedLoaves: 0, breadCount: null, cashCount: null };
     if (!live) { db.days.push({ id, ...day }); db.state = { dayId: id }; db.sales = []; demoSave(); emit(); return; }
     const b = fs.batch();
     b.set(fs.collection("days").doc(id), stamp(day));

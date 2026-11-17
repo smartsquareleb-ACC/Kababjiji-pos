@@ -72,6 +72,15 @@
           <button class="btn dark" id="btnAddBread">Add to stock</button>
         </div>
         <div class="panel">
+          <h2>Bread out</h2>
+          <p class="hint">Bread sent to the main shop or thrown away. It comes off the stock and is not expected as sandwich money.</p>
+          <div class="row">
+            <div class="field"><label for="outBundles">Bundles</label><input id="outBundles" inputmode="numeric" value="0"></div>
+            <div class="field"><label for="outLoose">Loose loaves</label><input id="outLoose" inputmode="numeric" value="0"></div>
+          </div>
+          <div class="row"><button class="btn dark" id="btnMove">Move to main shop</button><button class="btn danger" id="btnWaste">Waste</button></div>
+        </div>
+        <div class="panel">
           <h2>Count the bread left</h2>
           <p class="hint">Count what is physically left. The system works out how many loaves were used and how much money that bread should have brought in.</p>
           <div class="row">

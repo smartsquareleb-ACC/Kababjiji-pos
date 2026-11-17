@@ -22,7 +22,10 @@
     return { paid, change: ch, owed: ch < 0 ? -ch : 0, changeUSD: ch > 0 ? usd : 0, changeLBP: ch > 0 ? lbp : 0 };
   };
 
-  C.breadTotal = (day, lpb) => day ? (day.startBundles || 0) * lpb + (day.startLoose || 0) + (day.addedLoaves || 0) : 0;
+  // Bread in the shop today: kept from yesterday + new bread at the start + deliveries, minus bread moved to the
+  // main shop or thrown away. Moved and wasted loaves never count as sandwiches, so they stay out of the cash check.
+  C.breadOut = day => (day && day.breadMoves || []).reduce((a, m) => a + (m.loaves || 0), 0);
+  C.breadTotal = (day, lpb) => day ? (day.carried || 0) + (day.startBundles || 0) * lpb + (day.startLoose || 0) + (day.addedLoaves || 0) - C.breadOut(day) : 0;
 
   // Everything the owner needs about one day, from the day document and its sales.
   C.summary = (day, sales, lpb) => {
