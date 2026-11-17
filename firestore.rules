@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signedIn() { return request.auth != null; }
+    function path(p) { return /databases/$(db)/documents/$(p); }
+    function role() { return signedIn() && exists(path("users/" + request.auth.uid)) ? get(path("users/" + request.auth.uid)).data.role : "none"; }
+    function owner() { return role() == "owner"; }
+    function staff() { return role() in ["cashier", "owner"]; }
+
+    // Each person reads their own profile; the owner manages everyone.
+    // A sign-up creates its own profile as "pending". The very first account claims "owner" once (see state/owner).
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || owner());
+      allow create: if signedIn() && request.auth.uid == uid && (request.resource.data.role == "pending"
+        || (request.resource.data.role == "owner" && !exists(path("state/owner")) && getAfter(path("state/owner")).data.uid == uid));
+      allow update, delete: if owner();
+    }
+
+    // Menu, prices and settings: everyone on staff reads (retail prices only), the owner edits.
+    match /menu/{id} { allow read: if staff(); allow write: if owner(); }
+    match /settings/{id} { allow read: if staff(); allow write: if owner(); }
+
+    // state/current says which day is open; state/owner is written once by the first account.
+    match /state/{id} {
+      allow read: if staff() || (id == "owner" && signedIn());
+      allow write: if owner() && id == "current";
+      allow create: if id == "owner" && signedIn() && request.resource.data.uid == request.auth.uid;
+    }
+
+    // Days hold the bread, float, counts and results: owner only.
+    match /days/{id} { allow read, write: if owner(); }
+
+    // Sales: staff add their own; a cashier reads only their own; only the owner voids or deletes.
+    match /sales/{id} {
+      allow read: if owner() || (staff() && resource.data.by == request.auth.uid);
+      allow create: if staff() && request.resource.data.by == request.auth.uid && request.resource.data.void == false
+        && request.resource.data.dayId == get(path("state/current")).data.dayId;
+      allow update, delete: if owner();
+    }
+  }
+}

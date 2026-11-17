@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kabab Jiji POS</title>
+<meta name="theme-color" content="#d9342b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="css/app.css?v=__V__">
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><img class="logo" src="assets/logo-mark.png" alt="Kabab Jiji"><span><span class="wm"><span class="k">KABAB</span> <span class="j">JIJI</span></span><small class="tag">FRESH MEAT</small><small id="dayLabel"></small></span></div>
+    <span class="sync" id="sync" hidden></span>
+    <nav id="nav" hidden>
+      <button data-view="sell" aria-current="page">Sell</button>
+      <button data-view="bread" data-owner hidden>Bread</button>
+      <button data-view="cash" data-owner hidden>Cash check</button>
+      <button data-view="report" data-owner hidden>Sales</button>
+      <button data-view="settings" data-owner hidden>Settings</button>
+      <span class="demo" id="demoBox" hidden><label for="demoRole">Demo as</label><select id="demoRole"><option value="owner">Owner</option><option value="cashier">Cashier</option></select></span>
+      <button id="btnLogout">Log out · <span id="whoLabel"></span></button>
+    </nav>
+  </header>
+  <main>
+    <section class="view" id="v-auth" hidden></section>
+
+    <section class="view" id="v-sell" hidden>
+      <div class="sell">
+        <div>
+          <div class="stockbar" id="stockbar" data-owner hidden></div>
+          <div class="menu" id="menu"></div>
+        </div>
+        <div class="panel order">
+          <h2>Current order</h2>
+          <div class="lines" id="lines"></div>
+          <div class="total"><span class="l" id="totL">0 LBP</span><span class="u" id="totU">$0.00</span></div>
+          <div class="pay">
+            <div class="payrow">
+              <label for="paidUSD">Customer gave (US$)</label>
+              <div class="inp"><input id="paidUSD" inputmode="decimal" placeholder="0"><button class="clr" data-clear="paidUSD" aria-label="Clear dollars">✕</button></div>
+              <div class="quick" id="qUSD"></div>
+            </div>
+            <div class="payrow">
+              <label for="paidLBP">Customer gave (LBP)</label>
+              <div class="inp"><input id="paidLBP" inputmode="numeric" placeholder="0"><button class="clr" data-clear="paidLBP" aria-label="Clear lira">✕</button></div>
+              <div class="quick" id="qLBP"></div>
+            </div>
+            <div class="change" id="change"></div>
+            <div class="row">
+              <button class="btn" id="btnClear">Clear order</button>
+              <button class="btn primary" id="btnPay" disabled>Complete sale</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="v-bread" hidden>
+      <div class="grid2">
+        <div class="panel"><h2>Bread today</h2><dl class="kv" id="breadKV"></dl></div>
+        <div class="panel">
+          <h2>Add bread delivered during the day</h2>
+          <div class="row">
+            <div class="field"><label for="addBundles">Bundles</label><input id="addBundles" inputmode="numeric" value="0"></div>
+            <div class="field"><label for="addLoose">Loose loaves</label><input id="addLoose" inputmode="numeric" value="0"></div>
+          </div>
+          <button class="btn dark" id="btnAddBread">Add to stock</button>
+        </div>
+        <div class="panel">
+          <h2>Count the bread left</h2>
+          <p class="hint">Count what is physically left. The system works out how many loaves were used and how much money that bread should have brought in.</p>
+          <div class="row">
+            <div class="field"><label for="cntBundles">Bundles left</label><input id="cntBundles" inputmode="numeric"></div>
+            <div class="field"><label for="cntLoose">Loose loaves left</label><input id="cntLoose" inputmode="numeric"></div>
+          </div>
+          <button class="btn dark" id="btnCountBread">Check bread</button>
+          <div id="breadVerdict"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="v-cash" hidden>
+      <div class="grid2">
+        <div class="panel"><h2>What should be in the drawer</h2><dl class="kv" id="expKV"></dl></div>
+        <div class="panel">
+          <h2>Count the drawer</h2>
+          <p class="hint">Count every note in the cash box, including the starting float.</p>
+          <div class="field"><label for="cntUSD">Dollars in drawer (US$)</label><input id="cntUSD" inputmode="decimal"></div>
+          <div class="field"><label for="cntLBP">Lira in drawer (LBP)</label><input id="cntLBP" inputmode="numeric"></div>
+          <button class="btn dark" id="btnCountCash">Check drawer</button>
+          <div id="cashVerdict"></div>
+          <div id="breadCashVerdict"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="v-report" hidden>
+      <div class="grid2">
+        <div class="panel"><h2>Today by item</h2><div class="tbl"><table id="byItem"></table></div></div>
+        <div class="panel"><h2>Orders today</h2><div class="tbl"><table id="orders"></table></div></div>
+        <div class="panel">
+          <h2>Close the day</h2>
+          <p class="hint">Saves today's sales, bread and drawer result to the history below and starts a new day.</p>
+          <div id="closeArea"><button class="btn danger" id="btnClose">Close day</button></div>
+        </div>
+        <div class="panel"><h2>Past days</h2><div class="tbl"><table id="history"></table></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-settings" hidden>
+      <div class="grid2">
+        <div class="panel">
+          <h2>Money and bread</h2>
+          <div class="field"><label for="setRate">Dollar rate (LBP for $1)</label><input id="setRate" inputmode="numeric"></div>
+          <div class="field"><label for="setLpb">Loaves in one bundle</label><input id="setLpb" inputmode="numeric"></div>
+          <div class="field"><label for="setTol">Ignore drawer differences under (LBP)</label><input id="setTol" inputmode="numeric"></div>
+          <button class="btn dark" id="btnSaveSettings">Save</button>
+        </div>
+        <div class="panel">
+          <h2>People</h2>
+          <p class="hint">Cashiers see only the Sell screen. Owners see everything. New sign-ups wait here until you give them a role.</p>
+          <div class="tbl"><table class="users" id="users"></table></div>
+          <h2 style="margin-top:14px">Add a login</h2>
+          <div class="field"><label for="nuName">Name</label><input id="nuName" autocomplete="off"></div>
+          <div class="field"><label for="nuEmail">Email</label><input id="nuEmail" type="email" autocomplete="off"></div>
+          <div class="field"><label for="nuPw">Password (6+ characters)</label><input id="nuPw" type="text" autocomplete="off"></div>
+          <div class="field"><label for="nuRole">Role</label><select id="nuRole"><option value="cashier">Cashier</option><option value="owner">Owner</option></select></div>
+          <button class="btn dark" id="btnAddUser">Add login</button>
+        </div>
+        <div class="panel" style="grid-column:1/-1">
+          <h2>Menu and prices</h2>
+          <p class="hint">"Bread" is how many loaves one of that item uses. Sandwiches use 1. Changes show on every device straight away.</p>
+          <div class="menuedit" id="menuEdit"></div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn" id="btnAddItem">Add item</button>
+            <button class="btn dark" id="btnSaveMenu">Save menu</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="modalRoot"></div>
+
+<script>window.APP_VERSION="__V__";</script>
+<script src="js/firebase-config.js?v=__V__"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script src="js/calc.js?v=__V__"></script>
+<script src="js/store.js?v=__V__"></script>
+<script src="js/app.js?v=__V__"></script>
+</body>
+</html>

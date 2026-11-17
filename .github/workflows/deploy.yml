@@ -1,0 +1,26 @@
+name: Deploy to Firebase
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the money and bread maths
+        run: node --test tests/*.test.cjs
+      - name: Deploy hosting and Firestore rules
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT secret is missing, skipping deploy (see README)."
+            exit 0
+          fi
+          V="${GITHUB_SHA::8}"
+          sed -i "s/__V__/$V/g" public/index.html public/sw.js
+          printf '%s' "$V" > public/version.txt
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx --yes firebase-tools@13.29.1 deploy --only hosting,firestore --project kababjiji-pos --non-interactive
