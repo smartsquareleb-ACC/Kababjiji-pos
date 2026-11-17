@@ -198,7 +198,7 @@
   function renderChange() {
     const c = payCalc(), el = $("change");
     if (!c.t) { el.className = "change"; el.innerHTML = `<span class="hint" style="margin:0">${T("Enter what the customer gave to see the change.", "اكتب شو عطاك الزبون لتشوف الباقي.")}</span>`; $("btnPay").disabled = true; return; }
-    if (!c.paid) { el.className = "change"; el.innerHTML = `<span>${T("To pay:", "المطلوب:")} <b>${L(c.t)}</b> ${T("or", "أو")} <b>${U(LtoU(c.t))}</b></span><span class="hint" style="margin:0">${T("Exact money? Tap <b>Paid exact in $</b> or <b>Paid exact in LBP</b>.", "دفع المبلغ تماماً؟ كبوس <b>دفع المبلغ تماماً بالدولار</b> أو <b>بالليرة</b>.")}</span>`; $("btnPay").disabled = false; return; }
+    if (!c.paid) { el.className = "change"; el.innerHTML = `<span>${T("To pay:", "المطلوب:")} <b>${L(c.t)}</b> ${T("or", "أو")} <b>${U(LtoU(c.t))}</b></span><span class="hint" style="margin:0">${T("Type what the customer gave, or tap <b>Paid exact in $</b> / <b>Paid exact in LBP</b>. The sale can't be completed before that.", "اكتب شو عطاك الزبون، أو كبوس <b>دفع المبلغ تماماً بالدولار</b> / <b>بالليرة</b>. ما فيك تكمّل البيع قبل هيك.")}</span>`; $("btnPay").disabled = true; return; }
     if (c.change < 0) { el.className = "change due"; el.innerHTML = `<span>${T("Still owed", "بعد ناقص")}</span><span class="big">${L(c.owed)}</span><span>${U(LtoU(c.owed))}</span>`; $("btnPay").disabled = true; return; }
     el.className = "change ok";
     const give = changeMode === "lbp" ? L(c.changeLBP) : changeMode === "usd" ? U(c.changeUSD) : `${U(c.changeUSD)} + ${L(c.changeLBP)}`;
@@ -222,8 +222,10 @@
   $("btnExactLBP").addEventListener("click", () => payExact("lbp"));
   $("btnPay").addEventListener("click", () => {
     const c = payCalc(); if (!c.t || !db.state.dayId) return;
-    if (c.paid && c.change < 0) return;
-    const exact = !c.paid;
+    // The customer's money must be entered and must cover the total.
+    if (!c.paid) { toast(T("Enter how much the customer gave", "اكتب قديش عطاك الزبون")); return; }
+    if (c.change < 0) return;
+    const exact = false;
     const sale = { dayId: db.state.dayId, no: db.sales.length + 1, t: Date.now(), lines: cartLines(), totalL: c.t, rate: R(),
       paidUSD: exact ? 0 : c.pu, paidLBP: exact ? c.t : c.pl, changeUSD: exact ? 0 : c.changeUSD, changeLBP: exact ? 0 : c.changeLBP, void: false };
     const saved = activeCheck && checkOf(activeCheck) ? Store.payCheck(activeCheck, { ...sale, label: checkOf(activeCheck).label }) : Store.addSale(sale);
