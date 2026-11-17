@@ -30,12 +30,16 @@
   // Everything the owner needs about one day, from the day document and its sales.
   C.summary = (day, sales, lpb, checks) => {
     const live = (sales || []).filter(s => !s.void);
-    let totalL = 0, breadSold = 0, inUSD = 0, inLBP = 0, breadQ = 0, breadM = 0, otherL = 0;
+    let totalL = 0, breadSold = 0, inUSD = 0, inLBP = 0, breadQ = 0, breadM = 0, otherL = 0, debtL = 0, debtPaidL = 0, debts = 0, orders = 0;
     const byItem = {};
     for (const s of live) {
-      totalL += s.totalL;
       inUSD += (s.paidUSD || 0) - (s.changeUSD || 0);
       inLBP += (s.paidLBP || 0) - (s.changeLBP || 0);
+      // An old debt paid today: money comes into the drawer, but it is not a new sale and uses no bread.
+      if (s.debtPay) { debtPaidL += s.totalL; continue; }
+      orders++; totalL += s.totalL;
+      // Sold on debt today: bread is used and it is a sale, but no money is in the drawer.
+      if (s.debt) { debtL += s.totalL; debts++; }
       for (const l of s.lines) {
         const m = l.priceL * l.qty;
         const k = byItem[l.name] || (byItem[l.name] = { qty: 0, totalL: 0 });
@@ -48,7 +52,7 @@
     for (const c of checks || []) for (const l of c.lines) { checkBread += (l.bread || 0) * l.qty; checksL += l.priceL * l.qty; }
     const breadTotal = C.breadTotal(day, lpb);
     return {
-      orders: live.length, totalL, breadTotal, breadSold, breadLeft: breadTotal - breadSold - checkBread,
+      orders, totalL, debts, debtL, debtPaidL, breadTotal, breadSold, breadLeft: breadTotal - breadSold - checkBread,
       openChecks: (checks || []).length, checkBread, checksL,
       inUSD, inLBP, byItem, otherL,
       // money one loaf should bring in: the average price of bread items sold today
@@ -78,7 +82,7 @@
     const out = { counted, expected, diff: counted - expected, usd: day.cashCount.usd, lbp: day.cashCount.lbp };
     if (bread && !bread.invalid) {
       const float = Math.round(day.openLBP || 0) + Math.round((day.openUSD || 0) * rate);
-      out.byBread = float + Math.round(bread.paidUsed * bread.loafL) + sum.otherL;
+      out.byBread = float + Math.round(bread.paidUsed * bread.loafL) + sum.otherL - (sum.debtL || 0) + (sum.debtPaidL || 0);
       out.diffBread = counted - out.byBread;
     }
     return out;

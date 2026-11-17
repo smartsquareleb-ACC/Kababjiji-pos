@@ -68,3 +68,23 @@ test("open checks hold bread: not missing, not expected in the drawer yet", () =
   const c = C.cashCheck({ ...day, cashCount: { usd: 0, lbp: 1537000 } }, s, rate, b);
   assert.strictEqual(c.diffBread, 0);
 });
+
+test("debts: bread used and counted as a sale, but no money expected until it is paid", () => {
+  const debtSale = { ...sale([sw(2)], 0, 0, 0), debt: true };
+  const s = C.summary(day, [sale([sw(1)], 0, 537000, 0), debtSale], lpb);
+  assert.strictEqual(s.orders, 2);
+  assert.strictEqual(s.debtL, 1074000);
+  assert.strictEqual(s.expLBP, 1000000 + 537000);
+  const b = C.breadCheck({ ...day, breadCount: { bundles: 19, loose: 3 } }, s, lpb);
+  assert.strictEqual(b.missing, 0);
+  const c = C.cashCheck({ ...day, cashCount: { usd: 0, lbp: 1537000 } }, s, rate, b);
+  assert.strictEqual(c.diff, 0);
+  assert.strictEqual(c.diffBread, 0);
+  // Paid on another day: drawer money, not a sale, no bread.
+  const pay = { lines: [], totalL: 1074000, paidUSD: 0, paidLBP: 1074000, changeUSD: 0, changeLBP: 0, debtPay: "d1" };
+  const s2 = C.summary(day, [pay], lpb);
+  assert.strictEqual(s2.orders, 0);
+  assert.strictEqual(s2.totalL, 0);
+  assert.strictEqual(s2.expLBP, 1000000 + 1074000);
+  assert.strictEqual(s2.breadSold, 0);
+});

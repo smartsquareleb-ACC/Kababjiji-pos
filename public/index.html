@@ -14,20 +14,23 @@
 <body>
 <div class="app">
   <header>
-    <div class="brand"><img class="logo" src="assets/logo-mark.png" alt="Kabab Jiji"><span><span class="wm"><span class="k">KABAB</span> <span class="j">JIJI</span></span><small class="tag">FRESH MEAT</small><small id="dayLabel"></small></span></div>
+    <div class="brand"><img class="logo" src="assets/logo-mark.png" alt="Kabab Jiji"><span><span class="wm"><span class="k">KABAB</span> <span class="j">JIJI</span></span><small class="tag" data-ar="لحمة طازة">FRESH MEAT</small><small id="dayLabel"></small></span></div>
     <span class="sync" id="sync" hidden></span>
+    <button class="langbtn" id="btnLang" lang="ar">عربي</button>
     <nav id="nav" hidden>
-      <button data-view="sell" aria-current="page">Sell</button>
-      <button data-view="bread" data-owner hidden>Bread</button>
-      <button data-view="cash" data-owner hidden>Cash check</button>
-      <button data-view="report" data-owner hidden>Sales</button>
-      <button data-view="settings" data-owner hidden>Settings</button>
-      <span class="demo" id="demoBox" hidden><label for="demoRole">Demo as</label><select id="demoRole"><option value="owner">Owner</option><option value="cashier">Cashier</option></select></span>
-      <button id="btnLogout">Log out · <span id="whoLabel"></span></button>
+      <button data-view="sell" aria-current="page" data-ar="بيع">Sell</button>
+      <button data-view="bread" data-owner hidden data-ar="الخبز">Bread</button>
+      <button data-view="cash" data-owner hidden data-ar="فحص الصندوق">Cash check</button>
+      <button data-view="report" data-owner hidden data-ar="المبيعات">Sales</button>
+      <button data-view="settings" data-owner hidden data-ar="الإعدادات">Settings</button>
+      <span class="demo" id="demoBox" hidden><label for="demoRole" data-ar="تجربة كـ">Demo as</label><select id="demoRole"><option value="owner" data-ar="المالك">Owner</option><option value="cashier" data-ar="كاشير">Cashier</option><option value="pos" data-ar="تيل مشترك">Shared till</option></select></span>
+      <button id="btnSwitch" hidden data-ar="غيّر الشخص">Switch user</button>
+      <button id="btnLogout"><span data-ar="خروج">Log out</span> · <span id="whoLabel"></span></button>
     </nav>
   </header>
   <main>
     <section class="view" id="v-auth" hidden></section>
+    <section class="view" id="v-pin" hidden></section>
 
     <section class="view" id="v-sell" hidden>
       <div class="sell">
@@ -37,26 +40,26 @@
         </div>
         <div class="panel order">
           <div id="checksBar"></div>
-          <h2 id="orderTitle">Current order</h2>
+          <h2 id="orderTitle" data-ar="الطلب الحالي">Current order</h2>
           <div class="lines" id="lines"></div>
           <div class="total"><span class="l" id="totL">0 LBP</span><span class="u" id="totU">$0.00</span></div>
           <div class="pay">
             <div class="payrow">
-              <label for="paidUSD">Customer gave (US$)</label>
+              <label for="paidUSD" data-ar="الزبون دفع (دولار)">Customer gave (US$)</label>
               <div class="inp"><input id="paidUSD" inputmode="decimal" placeholder="0"><button class="clr" data-clear="paidUSD" aria-label="Clear dollars">✕</button></div>
-              <div class="quick" id="qUSD"></div>
             </div>
             <div class="payrow">
-              <label for="paidLBP">Customer gave (LBP)</label>
+              <label for="paidLBP" data-ar="الزبون دفع (ليرة)">Customer gave (LBP)</label>
               <div class="inp"><input id="paidLBP" inputmode="numeric" placeholder="0"><button class="clr" data-clear="paidLBP" aria-label="Clear lira">✕</button></div>
-              <div class="quick" id="qLBP"></div>
             </div>
-            <div class="row exact"><button class="btn" id="btnExactUSD">Paid exact in $</button><button class="btn" id="btnExactLBP">Paid exact in LBP</button></div>
+            <div class="row exact"><button class="btn" id="btnExactUSD" data-ar="دفع المبلغ تماماً بالدولار">Paid exact in $</button><button class="btn" id="btnExactLBP" data-ar="دفع المبلغ تماماً بالليرة">Paid exact in LBP</button></div>
             <div class="change" id="change"></div>
-            <button class="btn" id="btnCheck">Save as open check (pay later)</button>
+            <button class="btn" id="btnCheck" data-ar="احفظ كحساب مفتوح (يدفع بعدين)">Save as open check (pay later)</button>
+            <button class="btn" id="btnDebt" data-ar="سجّل دين (بيدفع يوم تاني)">Save as debt (pays another day)</button>
+            <button class="btn" id="btnDebts" hidden></button>
             <div class="row">
-              <button class="btn" id="btnClear">Clear order</button>
-              <button class="btn primary" id="btnPay" disabled>Complete sale</button>
+              <button class="btn" id="btnClear" data-ar="امسح الطلب">Clear order</button>
+              <button class="btn primary" id="btnPay" disabled data-ar="إتمام البيع">Complete sale</button>
             </div>
           </div>
         </div>
@@ -65,32 +68,32 @@
 
     <section class="view" id="v-bread" hidden>
       <div class="grid2">
-        <div class="panel"><h2>Bread today</h2><dl class="kv" id="breadKV"></dl></div>
+        <div class="panel"><h2 data-ar="الخبز اليوم">Bread today</h2><dl class="kv" id="breadKV"></dl></div>
         <div class="panel">
-          <h2>Add bread delivered during the day</h2>
+          <h2 data-ar="زيد خبز وصل خلال النهار">Add bread delivered during the day</h2>
           <div class="row">
-            <div class="field"><label for="addBundles">Bundles</label><input id="addBundles" inputmode="numeric" value="0"></div>
-            <div class="field"><label for="addLoose">Loose loaves</label><input id="addLoose" inputmode="numeric" value="0"></div>
+            <div class="field"><label for="addBundles" data-ar="ربطات">Bundles</label><input id="addBundles" inputmode="numeric" value="0"></div>
+            <div class="field"><label for="addLoose" data-ar="أرغفة فرط">Loose loaves</label><input id="addLoose" inputmode="numeric" value="0"></div>
           </div>
-          <button class="btn dark" id="btnAddBread">Add to stock</button>
+          <button class="btn dark" id="btnAddBread" data-ar="زيد عالمخزون">Add to stock</button>
         </div>
         <div class="panel">
-          <h2>Bread out</h2>
-          <p class="hint">Bread sent to the main shop or thrown away. It comes off the stock and is not expected as sandwich money.</p>
+          <h2 data-ar="خبز طالع">Bread out</h2>
+          <p class="hint" data-ar="خبز انبعت عالمحل الرئيسي أو انكب. بينشال من المخزون وما بينحسب كمصاري سندويشات.">Bread sent to the main shop or thrown away. It comes off the stock and is not expected as sandwich money.</p>
           <div class="row">
-            <div class="field"><label for="outBundles">Bundles</label><input id="outBundles" inputmode="numeric" value="0"></div>
-            <div class="field"><label for="outLoose">Loose loaves</label><input id="outLoose" inputmode="numeric" value="0"></div>
+            <div class="field"><label for="outBundles" data-ar="ربطات">Bundles</label><input id="outBundles" inputmode="numeric" value="0"></div>
+            <div class="field"><label for="outLoose" data-ar="أرغفة فرط">Loose loaves</label><input id="outLoose" inputmode="numeric" value="0"></div>
           </div>
-          <div class="row"><button class="btn dark" id="btnMove">Move to main shop</button><button class="btn danger" id="btnWaste">Waste</button></div>
+          <div class="row"><button class="btn dark" id="btnMove" data-ar="نقل عالمحل الرئيسي">Move to main shop</button><button class="btn danger" id="btnWaste" data-ar="تالف">Waste</button></div>
         </div>
         <div class="panel">
-          <h2>Count the bread left</h2>
-          <p class="hint">Count what is physically left. The system works out how many loaves were used and how much money that bread should have brought in.</p>
+          <h2 data-ar="عدّ الخبز الباقي">Count the bread left</h2>
+          <p class="hint" data-ar="عدّ الخبز الموجود فعلياً. النظام بيحسب قديش رغيف انصرف وقديش لازم يكون جاب مصاري.">Count what is physically left. The system works out how many loaves were used and how much money that bread should have brought in.</p>
           <div class="row">
-            <div class="field"><label for="cntBundles">Bundles left</label><input id="cntBundles" inputmode="numeric"></div>
-            <div class="field"><label for="cntLoose">Loose loaves left</label><input id="cntLoose" inputmode="numeric"></div>
+            <div class="field"><label for="cntBundles" data-ar="ربطات باقية">Bundles left</label><input id="cntBundles" inputmode="numeric"></div>
+            <div class="field"><label for="cntLoose" data-ar="أرغفة فرط باقية">Loose loaves left</label><input id="cntLoose" inputmode="numeric"></div>
           </div>
-          <button class="btn dark" id="btnCountBread">Check bread</button>
+          <button class="btn dark" id="btnCountBread" data-ar="افحص الخبز">Check bread</button>
           <div id="breadVerdict"></div>
         </div>
       </div>
@@ -98,65 +101,76 @@
 
     <section class="view" id="v-cash" hidden>
       <div class="grid2">
-        <div class="panel"><h2>What should be in the drawer</h2><dl class="kv" id="expKV"></dl></div>
+        <div class="panel"><h2 data-ar="شو لازم يكون بالصندوق">What should be in the drawer</h2><dl class="kv" id="expKV"></dl></div>
         <div class="panel">
-          <h2>Count the drawer</h2>
-          <p class="hint">Count every note in the cash box, including the starting float.</p>
-          <div class="field"><label for="cntUSD">Dollars in drawer (US$)</label><input id="cntUSD" inputmode="decimal"></div>
-          <div class="field"><label for="cntLBP">Lira in drawer (LBP)</label><input id="cntLBP" inputmode="numeric"></div>
-          <button class="btn dark" id="btnCountCash">Check drawer</button>
+          <h2 data-ar="عدّ الصندوق">Count the drawer</h2>
+          <p class="hint" data-ar="عدّ كل المصاري بالصندوق، مع مصاري أول النهار.">Count every note in the cash box, including the starting float.</p>
+          <div class="field"><label for="cntUSD" data-ar="دولار بالصندوق">Dollars in drawer (US$)</label><input id="cntUSD" inputmode="decimal"></div>
+          <div class="field"><label for="cntLBP" data-ar="ليرة بالصندوق">Lira in drawer (LBP)</label><input id="cntLBP" inputmode="numeric"></div>
+          <button class="btn dark" id="btnCountCash" data-ar="افحص الصندوق">Check drawer</button>
           <div id="cashVerdict"></div>
           <div id="breadCashVerdict"></div>
         </div>
         <div class="panel">
-          <h2>Close the day</h2>
-          <p class="hint">When the counts are done, close the day. It saves today's sales, bread and drawer result to Sales → Past days and the next start opens a new day.</p>
-          <div class="close-area"><button class="btn danger" data-close="ask">Close day</button></div>
+          <h2 data-ar="سكّر النهار">Close the day</h2>
+          <p class="hint" data-ar="بس تخلص العدّ، سكّر النهار. بينحفظ البيع والخبز ونتيجة الصندوق بالمبيعات ← الأيام السابقة، والبداية الجاية بتفتح نهار جديد.">When the counts are done, close the day. It saves today's sales, bread and drawer result to Sales → Past days and the next start opens a new day.</p>
+          <div class="close-area"><button class="btn danger" data-close="ask" data-ar="سكّر النهار">Close day</button></div>
         </div>
       </div>
     </section>
 
     <section class="view" id="v-report" hidden>
       <div class="grid2">
-        <div class="panel"><h2>Today by item</h2><div class="tbl"><table id="byItem"></table></div></div>
-        <div class="panel"><h2>Open checks (not paid yet)</h2><div class="tbl"><table id="openChecks"></table></div></div>
-        <div class="panel"><h2>Orders today</h2><div class="tbl"><table id="orders"></table></div></div>
+        <div class="panel"><h2 data-ar="اليوم حسب الصنف">Today by item</h2><div class="tbl"><table id="byItem"></table></div></div>
+        <div class="panel"><h2 data-ar="حسابات مفتوحة (ما اندفعت بعد)">Open checks (not paid yet)</h2><div class="tbl"><table id="openChecks"></table></div></div>
+        <div class="panel"><h2 data-ar="الديون (ما اندفعت بعد)">Debts (not paid yet)</h2><div class="tbl"><table id="debtsTbl"></table></div></div>
+        <div class="panel"><h2 data-ar="طلبات اليوم">Orders today</h2><div class="tbl"><table id="orders"></table></div></div>
         <div class="panel">
-          <h2>Close the day</h2>
-          <p class="hint">Saves today's sales, bread and drawer result to the history below and starts a new day.</p>
-          <div class="close-area"><button class="btn danger" data-close="ask">Close day</button></div>
+          <h2 data-ar="سكّر النهار">Close the day</h2>
+          <p class="hint" data-ar="بيحفظ بيع اليوم والخبز ونتيجة الصندوق بالسجل تحت وبيبلّش نهار جديد.">Saves today's sales, bread and drawer result to the history below and starts a new day.</p>
+          <div class="close-area"><button class="btn danger" data-close="ask" data-ar="سكّر النهار">Close day</button></div>
         </div>
-        <div class="panel"><h2>Past days</h2><div class="tbl"><table id="history"></table></div></div>
+        <div class="panel"><h2 data-ar="الأيام السابقة">Past days</h2><div class="tbl"><table id="history"></table></div></div>
       </div>
     </section>
 
     <section class="view" id="v-settings" hidden>
       <div class="grid2">
         <div class="panel">
-          <h2>Money and bread</h2>
-          <div class="field"><label for="setRate">Dollar rate (LBP for $1)</label><input id="setRate" inputmode="numeric"></div>
-          <div class="field"><label for="setLpb">Loaves in one bundle</label><input id="setLpb" inputmode="numeric"></div>
-          <div class="field"><label for="setTol">Ignore drawer differences under (LBP)</label><input id="setTol" inputmode="numeric"></div>
-          <button class="btn dark" id="btnSaveSettings">Save</button>
+          <h2 data-ar="المصاري والخبز">Money and bread</h2>
+          <div class="field"><label for="setRate" data-ar="سعر الدولار (ليرة لكل $1)">Dollar rate (LBP for $1)</label><input id="setRate" inputmode="numeric"></div>
+          <div class="field"><label for="setLpb" data-ar="أرغفة بالربطة">Loaves in one bundle</label><input id="setLpb" inputmode="numeric"></div>
+          <div class="field"><label for="setTol" data-ar="تجاهل فروقات الصندوق أقل من (ليرة)">Ignore drawer differences under (LBP)</label><input id="setTol" inputmode="numeric"></div>
+          <button class="btn dark" id="btnSaveSettings" data-ar="حفظ">Save</button>
         </div>
         <div class="panel">
-          <h2>People</h2>
-          <p class="hint">Cashiers see only the Sell screen. Owners see everything. New sign-ups wait here until you give them a role.</p>
+          <h2 data-ar="الأشخاص">People</h2>
+          <p class="hint" data-ar="الكاشير بيشوف شاشة البيع بس. المالك بيشوف كل شي. الحسابات الجديدة بتستنى هون لتعطيها دور.">Cashiers see only the Sell screen. Owners see everything. New sign-ups wait here until you give them a role.</p>
           <div class="tbl"><table class="users" id="users"></table></div>
-          <h2 style="margin-top:14px">Add a login</h2>
-          <div class="field"><label for="nuName">Name</label><input id="nuName" autocomplete="off"></div>
-          <div class="field"><label for="nuEmail">Email</label><input id="nuEmail" type="email" autocomplete="off"></div>
-          <div class="field"><label for="nuPw">Password (6+ characters)</label><input id="nuPw" type="text" autocomplete="off"></div>
-          <div class="field"><label for="nuRole">Role</label><select id="nuRole"><option value="cashier">Cashier</option><option value="owner">Owner</option></select></div>
-          <button class="btn dark" id="btnAddUser">Add login</button>
+          <h2 style="margin-top:14px" data-ar="زيد حساب">Add a login</h2>
+          <div class="field"><label for="nuName" data-ar="الاسم">Name</label><input id="nuName" autocomplete="off"></div>
+          <div class="field"><label for="nuEmail" data-ar="الإيميل">Email</label><input id="nuEmail" type="email" autocomplete="off"></div>
+          <div class="field"><label for="nuPw" data-ar="كلمة السر (6 أحرف أو أكتر)">Password (6+ characters)</label><input id="nuPw" type="text" autocomplete="off"></div>
+          <div class="field"><label for="nuRole" data-ar="الدور">Role</label><select id="nuRole"><option value="cashier" data-ar="كاشير">Cashier</option><option value="owner" data-ar="المالك">Owner</option><option value="pos" data-ar="تيل مشترك (أشخاص بـ PIN)">Shared till (people with PIN)</option></select></div>
+          <button class="btn dark" id="btnAddUser" data-ar="زيد الحساب">Add login</button>
+        </div>
+        <div class="panel">
+          <h2 data-ar="أشخاص التيل (PIN)">Till people (PIN)</h2>
+          <p class="hint" data-ar="عالحساب المشترك (pos@kababjiji.app) كل واحد بيكبس عإسمو وبيحط الـ PIN تبعو. المالك بيشوف كل شي، الكاشير البيع بس.">On the shared login (pos@kababjiji.app) each person taps their name and types their PIN. Owners see everything, cashiers only Sell.</p>
+          <div class="tbl"><table id="staffTbl"></table></div>
+          <h2 style="margin-top:14px" data-ar="زيد شخص">Add a person</h2>
+          <div class="row"><div class="field"><label for="nsName" data-ar="الاسم">Name</label><input id="nsName" autocomplete="off"></div>
+          <div class="field"><label for="nsRole" data-ar="الدور">Role</label><select id="nsRole"><option value="cashier" data-ar="كاشير">Cashier</option><option value="owner" data-ar="المالك">Owner</option></select></div></div>
+          <div class="field"><label for="nsPin" data-ar="PIN (4 إلى 6 أرقام)">PIN (4 to 6 digits)</label><input id="nsPin" inputmode="numeric" type="password" autocomplete="new-password" maxlength="6"></div>
+          <button class="btn dark" id="btnAddStaff" data-ar="زيد">Add</button>
         </div>
         <div class="panel" style="grid-column:1/-1">
-          <h2>Menu and prices</h2>
-          <p class="hint">"Bread" is how many loaves one of that item uses. Sandwiches use 1. Changes show on every device straight away.</p>
+          <h2 data-ar="المنيو والأسعار">Menu and prices</h2>
+          <p class="hint" data-ar="&quot;خبز&quot; يعني قديش رغيف بياخد الصنف. السندويشة رغيف واحد. التغييرات بتبيّن على كل الأجهزة فوراً.">"Bread" is how many loaves one of that item uses. Sandwiches use 1. Changes show on every device straight away.</p>
           <div class="menuedit" id="menuEdit"></div>
           <div class="row" style="margin-top:10px">
-            <button class="btn" id="btnAddItem">Add item</button>
-            <button class="btn dark" id="btnSaveMenu">Save menu</button>
+            <button class="btn" id="btnAddItem" data-ar="زيد صنف">Add item</button>
+            <button class="btn dark" id="btnSaveMenu" data-ar="احفظ المنيو">Save menu</button>
           </div>
         </div>
       </div>

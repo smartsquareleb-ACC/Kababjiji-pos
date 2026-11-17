@@ -25,6 +25,8 @@ service cloud.firestore {
     // Menu, prices and settings: everyone on staff reads (retail prices only), the owner edits.
     match /menu/{id} { allow read: if staff(); allow write: if owner(); }
     match /settings/{id} { allow read: if staff(); allow write: if owner(); }
+    // People who pick themselves by PIN on the shared till login. PINs are stored only as a hash.
+    match /staff/{id} { allow read: if staff(); allow write: if owner(); }
 
     // state/current says which day is open; state/owner is written once by the first account.
     match /state/{id} {
@@ -43,7 +45,18 @@ service cloud.firestore {
       allow create: if staff() && request.resource.data.by == request.auth.uid && request.resource.data.status == "open"
         && request.resource.data.dayId == get(/databases/$(db)/documents/state/current).data.dayId;
       allow update: if owner() || (staff() && resource.data.status == "open" && request.resource.data.dayId == resource.data.dayId
-        && request.resource.data.status in ["open", "paid"]);
+        && request.resource.data.status in ["open", "paid", "debt"]);
+      allow delete: if owner();
+    }
+
+    // Debts (client pays another day): staff add them with a name and phone, and mark them paid; only the owner deletes.
+    match /debts/{id} {
+      allow read: if staff();
+      allow create: if staff() && request.resource.data.by == request.auth.uid && request.resource.data.status == "open"
+        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.phone is string && request.resource.data.phone.size() >= 6;
+      allow update: if owner() || (staff() && resource.data.status == "open" && request.resource.data.status == "paid"
+        && request.resource.data.totalL == resource.data.totalL);
       allow delete: if owner();
     }
 
