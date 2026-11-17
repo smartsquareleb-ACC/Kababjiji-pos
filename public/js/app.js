@@ -198,6 +198,7 @@
     <dt>Loaves per bundle</dt><dd>${S().lpb}</dd>`;
     const c = bread(), el = $("breadVerdict");
     if (!c) { el.innerHTML = ""; return; }
+    if (c.invalid) { el.innerHTML = `<div class="verdict warn"><div class="h">Check the count</div><p>You counted ${breadText(c.counted)} but the day only had ${breadText(sum().breadTotal)}. Count again, or add the bread that was delivered first.</p></div>`; return; }
     if (c.missing > 0) el.innerHTML = `<div class="verdict bad"><div class="h">${c.missing} loaves not rung up</div><p>${c.used} loaves were used but only ${c.sold} sandwiches were sold. That is about <b>${L(c.missingL)}</b> (${U(LtoU(c.missingL))}) missing, unless bread was thrown away or eaten by staff.</p></div>`;
     else if (c.missing < 0) el.innerHTML = `<div class="verdict warn"><div class="h">${-c.missing} extra loaves on the shelf</div><p>More bread is left than expected. Check the count, or bread was added without being entered.</p></div>`;
     else el.innerHTML = `<div class="verdict good"><div class="h">Bread matches sales</div><p>${c.used} loaves used, ${c.sold} sandwiches sold.</p></div>`;
@@ -209,7 +210,10 @@
   });
   $("btnCountBread").addEventListener("click", async () => {
     if ($("cntBundles").value === "" && $("cntLoose").value === "") { toast("Enter the bread you counted"); return; }
-    await Store.updateDay(day().id, { breadCount: { bundles: Math.round(num($("cntBundles").value)), loose: Math.round(num($("cntLoose").value)), t: Date.now() } }); render();
+    const bundles = Math.max(0, Math.round(num($("cntBundles").value))), loose = Math.max(0, Math.round(num($("cntLoose").value)));
+    const counted = bundles * S().lpb + loose, total = sum().breadTotal;
+    if (counted > total) { toast(`That is ${counted} loaves, but today only had ${total}. Check the count or add the delivered bread first.`); return; }
+    await Store.updateDay(day().id, { breadCount: { bundles, loose, t: Date.now() } }); render();
   });
 
   /* ---------- cash ---------- */
@@ -232,7 +236,8 @@
     if (!c) { $("cashVerdict").innerHTML = ""; $("breadCashVerdict").innerHTML = ""; return; }
     $("cashVerdict").innerHTML = verdictMoney(c.diff, "By sales") +
       `<dl class="kv" style="margin-top:10px"><dt>Dollars counted / expected</dt><dd>${U(c.usd)} / ${U(s.expUSD)}</dd><dt>Lira counted / expected</dt><dd>${L(c.lbp)} / ${L(s.expLBP)}</dd></dl>`;
-    $("breadCashVerdict").innerHTML = b ? verdictMoney(c.diffBread, "By bread used") + `<p class="hint" style="margin-top:6px">${b.used} loaves used × ${L(b.loafL)} + drinks and fries + float = ${L(c.byBread)} expected.</p>`
+    $("breadCashVerdict").innerHTML = b && !b.invalid ? verdictMoney(c.diffBread, "By bread used") + `<p class="hint" style="margin-top:6px">Every loaf that left the shelf should be a paid sandwich. ${b.used} loaves used × ${L(b.loafL)} + drinks and fries sold + starting float = ${L(c.byBread)} should be in the drawer.</p>`
+      : b && b.invalid ? '<p class="hint" style="margin-top:10px">The bread count on the Bread page is higher than the bread you had today. Fix it there to check the drawer against bread used.</p>'
       : '<p class="hint" style="margin-top:10px">Count the bread on the Bread page to also check the drawer against bread used.</p>';
   }
   $("btnCountCash").addEventListener("click", async () => {
@@ -258,14 +263,18 @@
     if (b.dataset.sure) { await Store.voidSale(b.dataset.void); toast("Order voided"); render(); return; }
     b.dataset.sure = "1"; b.textContent = "Tap again to void"; b.style.color = "var(--bad)";
   });
-  $("closeArea").addEventListener("click", async e => {
-    if (e.target.id === "btnClose") { $("closeArea").innerHTML = `<p><b>Close today and start a new day?</b></p><div class="row"><button class="btn" id="ccNo">Cancel</button><button class="btn danger" id="ccYes">Yes, close day</button></div>`; return; }
-    if (e.target.id === "ccNo") { $("closeArea").innerHTML = '<button class="btn danger" id="btnClose">Close day</button>'; return; }
-    if (e.target.id === "ccYes") {
-      const s = sum(), b = bread(), c = Calc.cashCheck(day(), s, R(), b), left = b ? b.counted : s.breadLeft;
-      await Store.closeDay(day().id, { salesL: s.totalL, orders: s.orders, sandwiches: s.breadSold, breadMissing: b ? b.missing : null,
+  // Close day: on Cash check and on Sales. Asks once inside the page before closing.
+  const closeBtn = '<button class="btn danger" data-close="ask">Close day</button>';
+  document.addEventListener("click", async e => {
+    const b = e.target.closest("[data-close]"); if (!b) return;
+    const area = b.closest(".close-area"), what = b.dataset.close;
+    if (what === "ask") { area.innerHTML = `<p><b>Close today and start a new day?</b></p><div class="row"><button class="btn" data-close="no">Cancel</button><button class="btn danger" data-close="yes">Yes, close day</button></div>`; return; }
+    if (what === "no") { area.innerHTML = closeBtn; return; }
+    if (what === "yes" && day()) {
+      const s = sum(), br = bread(), c = Calc.cashCheck(day(), s, R(), br), left = br && !br.invalid ? br.counted : s.breadLeft;
+      await Store.closeDay(day().id, { salesL: s.totalL, orders: s.orders, sandwiches: s.breadSold, breadMissing: br && !br.invalid ? br.missing : null,
         drawerDiff: c ? c.diff : null, breadLeftBundles: Math.floor(left / S().lpb), rate: R() });
-      $("closeArea").innerHTML = '<button class="btn danger" id="btnClose">Close day</button>'; go("sell");
+      document.querySelectorAll(".close-area").forEach(a => a.innerHTML = closeBtn); toast("Day closed"); go("sell");
     }
   });
 

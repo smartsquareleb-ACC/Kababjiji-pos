@@ -44,3 +44,11 @@ test("day summary, bread check and drawer check find a shortage", () => {
   assert.strictEqual(C.verdict(c.diff, 10000), "short");
   assert.strictEqual(c.byBread, 1000000 + 5 * 537000 + 150000);
 });
+
+test("a bread count higher than the day's stock is flagged, not turned into negative loaves", () => {
+  const s = C.summary(day, [], lpb);
+  const b = C.breadCheck({ ...day, breadCount: { bundles: 50, loose: 0 } }, s, lpb, 537000);
+  assert.strictEqual(b.invalid, true);
+  const c = C.cashCheck({ ...day, cashCount: { usd: 98, lbp: 0 } }, s, rate, b);
+  assert.strictEqual(c.byBread, undefined);
+});

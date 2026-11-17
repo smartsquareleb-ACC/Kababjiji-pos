@@ -56,6 +56,8 @@
     if (!day || !day.breadCount) return null;
     const counted = day.breadCount.bundles * lpb + day.breadCount.loose;
     const used = sum.breadTotal - counted, missing = used - sum.breadSold;
+    // More bread counted than there was today: the count (or the starting stock) was typed wrong.
+    if (used < 0) return { counted, used, sold: sum.breadSold, invalid: true };
     const loafL = sum.loafL || fallbackLoafL || 0;
     return { counted, used, sold: sum.breadSold, missing, missingL: Math.round(missing * loafL), loafL };
   };
@@ -66,7 +68,7 @@
     const counted = Math.round(day.cashCount.lbp) + Math.round(day.cashCount.usd * rate);
     const expected = Math.round(sum.expLBP) + Math.round(sum.expUSD * rate);
     const out = { counted, expected, diff: counted - expected, usd: day.cashCount.usd, lbp: day.cashCount.lbp };
-    if (bread) {
+    if (bread && !bread.invalid) {
       const float = Math.round(day.openLBP || 0) + Math.round((day.openUSD || 0) * rate);
       out.byBread = float + Math.round(bread.used * bread.loafL) + sum.otherL;
       out.diffBread = counted - out.byBread;
