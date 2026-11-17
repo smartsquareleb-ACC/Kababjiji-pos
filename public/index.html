@@ -36,7 +36,8 @@
           <div class="menu" id="menu"></div>
         </div>
         <div class="panel order">
-          <h2>Current order</h2>
+          <div id="checksBar"></div>
+          <h2 id="orderTitle">Current order</h2>
           <div class="lines" id="lines"></div>
           <div class="total"><span class="l" id="totL">0 LBP</span><span class="u" id="totU">$0.00</span></div>
           <div class="pay">
@@ -52,6 +53,7 @@
             </div>
             <div class="row exact"><button class="btn" id="btnExactUSD">Paid exact in $</button><button class="btn" id="btnExactLBP">Paid exact in LBP</button></div>
             <div class="change" id="change"></div>
+            <button class="btn" id="btnCheck">Save as open check (pay later)</button>
             <div class="row">
               <button class="btn" id="btnClear">Clear order</button>
               <button class="btn primary" id="btnPay" disabled>Complete sale</button>
@@ -117,6 +119,7 @@
     <section class="view" id="v-report" hidden>
       <div class="grid2">
         <div class="panel"><h2>Today by item</h2><div class="tbl"><table id="byItem"></table></div></div>
+        <div class="panel"><h2>Open checks (not paid yet)</h2><div class="tbl"><table id="openChecks"></table></div></div>
         <div class="panel"><h2>Orders today</h2><div class="tbl"><table id="orders"></table></div></div>
         <div class="panel">
           <h2>Close the day</h2>

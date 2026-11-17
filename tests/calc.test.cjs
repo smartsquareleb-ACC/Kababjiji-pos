@@ -57,3 +57,14 @@ test("leftover bread, moves and waste: kept bread is stock, moved and wasted bre
   const d = { carried: 10, startBundles: 5, startLoose: 0, addedLoaves: 6, breadMoves: [{ type: "move", loaves: 4 }, { type: "waste", loaves: 2 }] };
   assert.strictEqual(C.breadTotal(d, lpb), 10 + 30 + 6 - 6);
 });
+
+test("open checks hold bread: not missing, not expected in the drawer yet", () => {
+  const checks = [{ lines: [sw(2)] }];
+  const s = C.summary(day, [sale([sw(1)], 0, 537000, 0)], lpb, checks);
+  assert.strictEqual(s.breadLeft, 120 - 1 - 2);
+  assert.strictEqual(s.checksL, 1074000);
+  const b = C.breadCheck({ ...day, breadCount: { bundles: 19, loose: 3 } }, s, lpb); // 117 left -> 3 used = 1 sold + 2 on checks
+  assert.strictEqual(b.missing, 0);
+  const c = C.cashCheck({ ...day, cashCount: { usd: 0, lbp: 1537000 } }, s, rate, b);
+  assert.strictEqual(c.diffBread, 0);
+});

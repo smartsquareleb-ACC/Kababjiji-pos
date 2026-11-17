@@ -156,3 +156,11 @@ tr.void td{text-decoration:line-through;color:var(--muted)}
 }
 
 .exact .btn{font-size:15px;padding:12px 10px;background:var(--panel);border-color:var(--good);color:var(--good)}
+
+#checksBar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+#checksBar:empty{display:none}
+#checksBar .ck{border:2px solid var(--gold);background:var(--soft);border-radius:12px;padding:8px 12px;font-weight:700;text-align:start;line-height:1.2}
+#checksBar .ck small{display:block;font-weight:500;color:var(--muted)}
+#checksBar .ck[aria-pressed="true"]{background:var(--gold);color:var(--ink)}
+#checksBar .lbl{width:100%;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+#btnCheck{width:100%;border-color:var(--gold)}

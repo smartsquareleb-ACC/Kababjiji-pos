@@ -14,13 +14,13 @@
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const fmtTime = t => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const fmtDate = t => new Date(t).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
-  function toast(msg) { const d = document.createElement("div"); d.className = "toast"; d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 2400); }
+  function toast(msg) { document.querySelectorAll(".toast").forEach(t => t.remove()); const d = document.createElement("div"); d.className = "toast"; d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 2400); }
   Store.onError = e => toast("Not saved: " + (e.code === "permission-denied" ? "you don't have access to do that" : e.message));
   const modalOpen = () => !!$("modalRoot").innerHTML;
   const closeModal = () => { $("modalRoot").innerHTML = ""; };
 
   const day = () => Store.currentDay();
-  const sum = () => Calc.summary(day(), db.sales, S().lpb);
+  const sum = () => Calc.summary(day(), db.sales, S().lpb, db.checks);
   const menuLoafL = () => { const it = db.menu.find(i => i.bread > 0); return it ? priceL(it) / it.bread : 0; };
   const bread = () => Calc.breadCheck(day(), sum(), S().lpb, menuLoafL());
 
@@ -106,12 +106,15 @@
   }
 
   /* ---------- sell ---------- */
-  let cart = {}, changeMode = "lbp";
+  let cart = {}, changeMode = "lbp", activeCheck = null; // activeCheck: id of the open check loaded in the order
   const cartLines = () => db.menu.filter(i => cart[i.id] > 0).map(i => ({ id: i.id, name: i.name, qty: cart[i.id], priceL: priceL(i), bread: i.bread || 0 }));
   const cartTotalL = () => cartLines().reduce((a, l) => a + l.priceL * l.qty, 0);
   const cartBread = () => cartLines().reduce((a, l) => a + l.bread * l.qty, 0);
   // Only the owner's device knows the bread stock; the cashier is never blocked.
-  const breadOk = it => !Store.isOwner() || !(it.bread > 0) || sum().breadLeft - cartBread() >= it.bread;
+  const checkOf = id => db.checks.find(c => c.id === id);
+  const linesBread = lines => lines.reduce((a, l) => a + (l.bread || 0) * l.qty, 0);
+  // The loaded check's bread is already counted as used, so only extra loaves need stock.
+  const breadOk = it => !Store.isOwner() || !(it.bread > 0) || sum().breadLeft + (activeCheck && checkOf(activeCheck) ? linesBread(checkOf(activeCheck).lines) : 0) - cartBread() >= it.bread;
   function renderMenu() {
     $("menu").innerHTML = db.menu.map(i => `<button class="item c-${esc(i.color || "side")}${i.big ? " big" : ""}" data-add="${esc(i.id)}">
       <span><span class="nm">${esc(i.name)}</span><br><span class="ar">${esc(i.ar || "")}</span></span>
@@ -130,10 +133,39 @@
     const cls = left <= 0 ? "out" : left <= S().lpb * 2 ? "low" : "";
     $("stockbar").innerHTML = `<span class="chip ${cls}">Bread left <b>${left}</b> loaves</span>
     <span class="chip ${cls}"><b>${sp.bundles}</b> bundles + <b>${sp.loose}</b> loose</span>
-    <span class="chip">Sandwiches sold <b>${s.breadSold}</b></span>`;
+    <span class="chip">Sandwiches sold <b>${s.breadSold}</b></span>${s.checkBread ? `<span class="chip">On open checks <b>${s.checkBread}</b></span>` : ""}`;
   }
+  function renderChecks() {
+    if (activeCheck && !checkOf(activeCheck)) { activeCheck = null; cart = {}; } // paid or cancelled on another device
+    const tot = c => c.lines.reduce((a, l) => a + l.priceL * l.qty, 0);
+    $("checksBar").innerHTML = db.checks.length ? `<span class="lbl">Open checks · tap to add items or pay</span>` + db.checks.map(c =>
+      `<button class="ck" data-check="${c.id}" aria-pressed="${c.id === activeCheck}">${esc(c.label)}<small>${L(tot(c))} · ${fmtTime(c.t)}</small></button>`).join("") : "";
+    $("orderTitle").textContent = activeCheck && checkOf(activeCheck) ? "Check: " + checkOf(activeCheck).label : "Current order";
+    $("btnCheck").textContent = activeCheck ? "Save changes, keep check open" : "Save as open check (pay later)";
+    $("btnClear").textContent = activeCheck ? "Close without paying" : "Clear order";
+  }
+  $("checksBar").addEventListener("click", e => {
+    const b = e.target.closest("[data-check]"); if (!b) return;
+    if (b.dataset.check === activeCheck) return;
+    if (!activeCheck && cartLines().length) { toast("Finish or save the current order first"); return; }
+    const c = checkOf(b.dataset.check); if (!c) return;
+    activeCheck = c.id; cart = {}; c.lines.forEach(l => { if (db.menu.some(i => i.id === l.id)) cart[l.id] = l.qty; });
+    $("paidUSD").value = ""; $("paidLBP").value = ""; changeMode = "lbp"; renderSell();
+  });
+  $("btnCheck").addEventListener("click", () => {
+    const lines = cartLines(); if (!lines.length) { toast("Tap an item first"); return; }
+    if (activeCheck) { Store.saveCheck(activeCheck, { lines }); toast("Check updated"); activeCheck = null; clearOrder(); return; }
+    const n = db.checks.length + 1;
+    $("modalRoot").innerHTML = `<div class="modal"><div class="box"><h3>Open check</h3><p class="hint">Name it so you can find it later: a table, a name or what they wear.</p>
+      <div class="field"><label for="ckLabel">Table or name</label><input id="ckLabel" value="Table ${n}" autocomplete="off"></div>
+      <div class="row"><button class="btn" id="ckNo">Cancel</button><button class="btn primary" id="ckGo">Save check</button></div></div></div>`;
+    $("ckLabel").select();
+    $("ckNo").addEventListener("click", closeModal);
+    const go = () => { Store.saveCheck(null, { label: $("ckLabel").value.trim() || `Table ${n}`, lines, dayId: db.state.dayId, t: Date.now() }); closeModal(); toast("Check saved. Pay it when they finish."); clearOrder(); };
+    $("ckGo").addEventListener("click", go); $("ckLabel").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+  });
   function renderSell() {
-    renderStock(); renderMenu();
+    renderChecks(); renderStock(); renderMenu();
     const lines = cartLines();
     $("lines").innerHTML = lines.length ? lines.map(l => `<div class="line"><span class="ln">${esc(l.name)}<small>${L(l.priceL * l.qty)} · ${U(LtoU(l.priceL * l.qty))}</small></span>
       <span class="qty"><button data-dec="${esc(l.id)}" aria-label="One less">−</button><span>${l.qty}</span><button data-inc="${esc(l.id)}" aria-label="One more">+</button></span><span></span></div>`).join("")
@@ -167,7 +199,7 @@
   $("qLBP").innerHTML = [10000, 20000, 50000, 100000, 500000, 1000000].map(v => `<button data-ql="${v}">+${v >= 1000000 ? v / 1000000 + "M" : v / 1000 + "k"}</button>`).join("");
   $("qUSD").addEventListener("click", e => { const b = e.target.closest("[data-qu]"); if (b) { $("paidUSD").value = num($("paidUSD").value) + num(b.dataset.qu); renderChange(); } });
   $("qLBP").addEventListener("click", e => { const b = e.target.closest("[data-ql]"); if (b) { $("paidLBP").value = (Math.round(num($("paidLBP").value)) + num(b.dataset.ql)).toLocaleString("en-US"); renderChange(); } });
-  function clearOrder() { cart = {}; $("paidUSD").value = ""; $("paidLBP").value = ""; changeMode = "lbp"; renderSell(); }
+  function clearOrder() { cart = {}; activeCheck = null; $("paidUSD").value = ""; $("paidLBP").value = ""; changeMode = "lbp"; renderSell(); }
   $("btnClear").addEventListener("click", clearOrder);
   // One tap when the customer pays the exact amount: fills it in and completes the sale.
   function payExact(cur) {
@@ -184,7 +216,7 @@
     const exact = !c.paid;
     const sale = { dayId: db.state.dayId, no: db.sales.length + 1, t: Date.now(), lines: cartLines(), totalL: c.t, rate: R(),
       paidUSD: exact ? 0 : c.pu, paidLBP: exact ? c.t : c.pl, changeUSD: exact ? 0 : c.changeUSD, changeLBP: exact ? 0 : c.changeLBP, void: false };
-    const saved = Store.addSale(sale);
+    const saved = activeCheck && checkOf(activeCheck) ? Store.payCheck(activeCheck, { ...sale, label: checkOf(activeCheck).label }) : Store.addSale(sale);
     clearOrder(); showReceipt(saved);
   });
   const canPrint = (() => { try { return window.self === window.top; } catch (e) { return false; } })();
@@ -192,7 +224,7 @@
     const r = s.rate || R(), u = l => "$" + (l / r).toFixed(2), n = v => Math.round(v).toLocaleString("en-US");
     return `<div class="receipt" id="receipt">
     <img class="rlogo" src="assets/logo.png" alt=""><div class="c">${esc(SHOP.place)}</div><div class="c">Tel ${esc(SHOP.phone)}</div>
-    <hr><div class="r"><span>Order #${s.no || ""}</span><span>${new Date(s.t).toLocaleString([], { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span></div><hr>
+    <hr>${s.label ? `<div class="c"><b>${esc(s.label)}</b></div>` : ""}<div class="r"><span>Order #${s.no || ""}</span><span>${new Date(s.t).toLocaleString([], { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span></div><hr>
     ${s.lines.map(l => `<div class="r"><span>${l.qty} x ${esc(l.name)}</span><span>${n(l.priceL * l.qty)}</span></div>`).join("")}
     <hr><div class="r tot"><span>TOTAL LBP</span><span>${n(s.totalL)}</span></div>
     <div class="r"><span>TOTAL USD</span><span>${u(s.totalL)}</span></div>
@@ -221,13 +253,14 @@
     <dt>Moved to main shop</dt><dd>${moved} loaves</dd>
     <dt>Waste</dt><dd>${wasted} loaves</dd>
     <dt>Total bread today</dt><dd>${breadText(s.breadTotal)}</dd>
-    <dt>Used by recorded sales</dt><dd>${s.breadSold} loaves</dd>
+    <dt>Used by paid sales</dt><dd>${s.breadSold} loaves</dd>
+    <dt>On open checks (not paid yet)</dt><dd>${s.checkBread} loaves</dd>
     <dt>Should be left</dt><dd>${breadText(s.breadLeft)}</dd>
     <dt>Loaves per bundle</dt><dd>${S().lpb}</dd>`;
     const c = bread(), el = $("breadVerdict");
     if (!c) { el.innerHTML = ""; return; }
     if (c.invalid) { el.innerHTML = `<div class="verdict warn"><div class="h">Check the count</div><p>You counted ${breadText(c.counted)} but the day only had ${breadText(sum().breadTotal)}. Count again, or add the bread that was delivered first.</p></div>`; return; }
-    if (c.missing > 0) el.innerHTML = `<div class="verdict bad"><div class="h">${c.missing} loaves not rung up</div><p>${c.used} loaves were used but only ${c.sold} sandwiches were sold. That is about <b>${L(c.missingL)}</b> (${U(LtoU(c.missingL))}) missing, unless bread was thrown away or eaten by staff.</p></div>`;
+    if (c.missing > 0) el.innerHTML = `<div class="verdict bad"><div class="h">${c.missing} loaves not rung up</div><p>${c.used} loaves were used but only ${c.sold} sandwiches were sold${c.onChecks ? ` and ${c.onChecks} are on open checks` : ""}. That is about <b>${L(c.missingL)}</b> (${U(LtoU(c.missingL))}) missing, unless bread was thrown away or eaten by staff.</p></div>`;
     else if (c.missing < 0) el.innerHTML = `<div class="verdict warn"><div class="h">${-c.missing} extra loaves on the shelf</div><p>More bread is left than expected. Check the count, or bread was added without being entered.</p></div>`;
     else el.innerHTML = `<div class="verdict good"><div class="h">Bread matches sales</div><p>${c.used} loaves used, ${c.sold} sandwiches sold.</p></div>`;
   }
@@ -265,6 +298,7 @@
     $("expKV").innerHTML = `<dt>Orders</dt><dd>${s.orders}</dd>
     <dt>Sales total</dt><dd>${L(s.totalL)} · ${U(LtoU(s.totalL))}</dd>
     <dt>Starting float</dt><dd>${U(d.openUSD || 0)} + ${L(d.openLBP || 0)}</dd>
+    <dt>Open checks, not paid yet</dt><dd>${s.openChecks} · ${L(s.checksL)}</dd>
     <dt>Cash taken in (after change)</dt><dd>${U(s.inUSD)} + ${L(s.inLBP)}</dd>
     <dt><b>Dollars that should be in drawer</b></dt><dd>${U(s.expUSD)}</dd>
     <dt><b>Lira that should be in drawer</b></dt><dd>${L(s.expLBP)}</dd>
@@ -273,7 +307,7 @@
     if (!c) { $("cashVerdict").innerHTML = ""; $("breadCashVerdict").innerHTML = ""; return; }
     $("cashVerdict").innerHTML = verdictMoney(c.diff, "By sales") +
       `<dl class="kv" style="margin-top:10px"><dt>Dollars counted / expected</dt><dd>${U(c.usd)} / ${U(s.expUSD)}</dd><dt>Lira counted / expected</dt><dd>${L(c.lbp)} / ${L(s.expLBP)}</dd></dl>`;
-    $("breadCashVerdict").innerHTML = b && !b.invalid ? verdictMoney(c.diffBread, "By bread used") + `<p class="hint" style="margin-top:6px">Every loaf that left the shelf should be a paid sandwich. ${b.used} loaves used × ${L(b.loafL)} + drinks and fries sold + starting float = ${L(c.byBread)} should be in the drawer.</p>`
+    $("breadCashVerdict").innerHTML = b && !b.invalid ? verdictMoney(c.diffBread, "By bread used") + `<p class="hint" style="margin-top:6px">Every loaf that left the shelf should be a paid sandwich. ${b.paidUsed} loaves used for paid sales × ${L(b.loafL)} + drinks and fries sold + starting float = ${L(c.byBread)} should be in the drawer.</p>`
       : b && b.invalid ? '<p class="hint" style="margin-top:10px">The bread count on the Bread page is higher than the bread you had today. Fix it there to check the drawer against bread used.</p>'
       : '<p class="hint" style="margin-top:10px">Count the bread on the Bread page to also check the drawer against bread used.</p>';
   }
@@ -288,6 +322,7 @@
     $("byItem").innerHTML = `<thead><tr><th>Item</th><th class="n">Qty</th><th class="n">LBP</th><th class="n">USD</th></tr></thead><tbody>` +
       (rows.length ? rows.map(([n, v]) => `<tr><td>${esc(n)}</td><td class="n">${v.qty}</td><td class="n">${Math.round(v.totalL).toLocaleString("en-US")}</td><td class="n">${U(LtoU(v.totalL))}</td></tr>`).join("") : '<tr><td colspan="4" class="empty">No sales yet today</td></tr>') +
       `<tr><td><b>Total</b></td><td></td><td class="n"><b>${Math.round(s.totalL).toLocaleString("en-US")}</b></td><td class="n"><b>${U(LtoU(s.totalL))}</b></td></tr></tbody>`;
+    $("openChecks").innerHTML = `<thead><tr><th>Check</th><th>Items</th><th class="n">Total</th><th></th></tr></thead><tbody>` + (db.checks.length ? db.checks.map(c => `<tr><td>${esc(c.label)}<br><small>${fmtTime(c.t)} · ${esc(c.byName || "")}</small></td><td>${c.lines.map(l => l.qty + "× " + esc(l.name)).join(", ")}</td><td class="n">${L(c.lines.reduce((a, l) => a + l.priceL * l.qty, 0))}</td><td><button class="mini" data-cancel="${c.id}">Cancel</button></td></tr>`).join("") : '<tr><td colspan="4" class="empty">No open checks</td></tr>') + "</tbody>";
     const ss = [...db.sales].reverse();
     $("orders").innerHTML = `<thead><tr><th>Time</th><th>Items</th><th class="n">Total</th><th>By</th><th></th></tr></thead><tbody>` +
       (ss.length ? ss.map(x => `<tr class="${x.void ? "void" : ""}"><td>${x.no ? "#" + x.no + " " : ""}${fmtTime(x.t)}</td><td>${x.lines.map(l => l.qty + "× " + esc(l.name)).join(", ")}</td><td class="n">${L(x.totalL)}</td><td>${esc(x.byName || "")}</td><td>${x.void ? "Voided" : `<button class="mini" data-void="${x.id}">Void</button>`}</td></tr>`).join("") : '<tr><td colspan="5" class="empty">No orders yet</td></tr>') + "</tbody>";
@@ -295,6 +330,11 @@
     $("history").innerHTML = `<thead><tr><th>Day</th><th class="n">Sales</th><th class="n">Sandwiches</th><th class="n">Drawer</th></tr></thead><tbody>` +
       (hist.length ? hist.map(d => { const h = d.summary; return `<tr><td>${fmtDate(d.openedAt)}</td><td class="n">${L(h.salesL)}</td><td class="n">${h.sandwiches}${h.breadMissing > 0 ? ` <span style="color:var(--bad)">(${h.breadMissing} missing)</span>` : ""}</td><td class="n" style="color:${h.drawerDiff == null ? "var(--muted)" : h.drawerDiff < -S().tol ? "var(--bad)" : "var(--good)"}">${h.drawerDiff == null ? "Not counted" : (h.drawerDiff < 0 ? "Short " : "") + L(Math.abs(h.drawerDiff))}</td></tr>`; }).join("") : '<tr><td colspan="4" class="empty">No closed days yet</td></tr>') + "</tbody>";
   }
+  $("openChecks").addEventListener("click", async e => {
+    const b = e.target.closest("[data-cancel]"); if (!b) return;
+    if (b.dataset.sure) { await Store.cancelCheck(b.dataset.cancel); toast("Check cancelled"); render(); return; }
+    b.dataset.sure = "1"; b.textContent = "Tap again to cancel"; b.style.color = "var(--bad)";
+  });
   $("orders").addEventListener("click", async e => {
     const b = e.target.closest("[data-void]"); if (!b) return;
     if (b.dataset.sure) { await Store.voidSale(b.dataset.void); toast("Order voided"); render(); return; }
@@ -305,7 +345,7 @@
   document.addEventListener("click", async e => {
     const b = e.target.closest("[data-close]"); if (!b) return;
     const area = b.closest(".close-area"), what = b.dataset.close;
-    if (what === "ask") { area.innerHTML = `<p><b>Close today and start a new day?</b></p><div class="row"><button class="btn" data-close="no">Cancel</button><button class="btn danger" data-close="yes">Yes, close day</button></div>`; return; }
+    if (what === "ask") { const oc = db.checks.length; area.innerHTML = `${oc ? `<div class="verdict warn" style="margin-bottom:8px"><div class="h">${oc} open check${oc > 1 ? "s" : ""} not paid</div><p>${L(sum().checksL)} is still owed. Get them paid first, or cancel them on the Sales page.</p></div>` : ""}<p><b>Close today and start a new day?</b></p><div class="row"><button class="btn" data-close="no">Cancel</button><button class="btn danger" data-close="yes">Yes, close day</button></div>`; return; }
     if (what === "no") { area.innerHTML = closeBtn; return; }
     if (what === "yes" && day()) {
       const s = sum(), br = bread(), c = Calc.cashCheck(day(), s, R(), br), left = br && !br.invalid ? br.counted : s.breadLeft;

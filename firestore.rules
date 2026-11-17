@@ -36,6 +36,17 @@ service cloud.firestore {
     // Days hold the bread, float, counts and results: owner only.
     match /days/{id} { allow read, write: if owner(); }
 
+    // Open checks (eat first, pay later): staff open them for today, add items and mark them paid;
+    // only the owner cancels or deletes one.
+    match /checks/{id} {
+      allow read: if staff();
+      allow create: if staff() && request.resource.data.by == request.auth.uid && request.resource.data.status == "open"
+        && request.resource.data.dayId == get(/databases/$(db)/documents/state/current).data.dayId;
+      allow update: if owner() || (staff() && resource.data.status == "open" && request.resource.data.dayId == resource.data.dayId
+        && request.resource.data.status in ["open", "paid"]);
+      allow delete: if owner();
+    }
+
     // Sales: staff add their own; a cashier reads only their own; only the owner voids or deletes.
     match /sales/{id} {
       allow read: if owner() || (staff() && resource.data.by == request.auth.uid);

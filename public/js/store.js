@@ -15,7 +15,7 @@
     { id: "almaza", name: "Almaza", ar: "ألمازة", amount: 150000, cur: "LBP", bread: 0, color: "drink", order: 7 },
     { id: "water", name: "Water", ar: "مياه", amount: 50000, cur: "LBP", bread: 0, color: "drink", order: 8 }
   ];
-  const db = { settings: { ...DEFAULT_SETTINGS }, menu: [], state: {}, days: [], sales: [], users: [] };
+  const db = { settings: { ...DEFAULT_SETTINGS }, menu: [], state: {}, days: [], sales: [], checks: [], users: [] };
   const Store = { live, db, user: null, ready: false, DEFAULT_MENU };
   const emit = () => listeners.forEach(f => f());
   Store.onChange = f => listeners.push(f);
@@ -30,6 +30,7 @@
   function demoLoad() {
     let s = null;
     try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+    if (s && !s.checks) s.checks = [];
     if (!s || !s.menu) s = { settings: { ...DEFAULT_SETTINGS }, menu: DEFAULT_MENU.map(x => ({ ...x })), state: {}, days: [], sales: [],
       users: [{ id: "demo-owner", name: "Owner", email: "owner@demo", role: "owner" }, { id: "demo-cashier", name: "Abdallah", email: "abdallah@demo", role: "cashier" }] };
     Object.assign(db, s);
@@ -37,7 +38,7 @@
   function demoSave() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
 
   // ---------- Live mode ----------
-  let fs, auth, unsubs = [], salesUnsub = null, salesDay = null, signingUp = false, claimTried = false;
+  let fs, auth, unsubs = [], salesUnsub = null, checksUnsub = null, salesDay = null, signingUp = false, claimTried = false;
   const stamp = d => ({ ...d, by: Store.user.id, byName: Store.user.name || "", at: firebase.firestore.FieldValue.serverTimestamp() });
   // Firestore saves on the device at once and uploads by itself when the internet is back,
   // so never block the till waiting for the upload. Online, wait a moment so a refusal still shows.
@@ -51,16 +52,19 @@
   function watchSales() {
     const d = db.state.dayId || null;
     if (d === salesDay && salesUnsub) return;
-    if (salesUnsub) salesUnsub();
-    salesUnsub = null; salesDay = d; db.sales = [];
+    if (salesUnsub) salesUnsub(); if (checksUnsub) checksUnsub();
+    salesUnsub = checksUnsub = null; salesDay = d; db.sales = []; db.checks = [];
     if (!d) { emit(); return; }
+    // Open checks (eat first, pay later): every till sees all of today's open checks.
+    checksUnsub = fs.collection("checks").where("dayId", "==", d).where("status", "==", "open")
+      .onSnapshot(s => { db.checks = s.docs.map(x => ({ id: x.id, ...x.data() })).sort((a, b) => a.t - b.t); emit(); }, err => console.error("checks", err));
     let q = fs.collection("sales").where("dayId", "==", d);
     // A cashier only loads their own sales of today (for order numbers), never the day's totals.
     if (!Store.isOwner()) q = q.where("by", "==", Store.user.id);
     salesUnsub = q.onSnapshot(s => { db.sales = s.docs.map(x => ({ id: x.id, ...x.data() })).sort((a, b) => a.t - b.t); emit(); }, err => console.error("sales", err));
   }
   async function subscribe() {
-    unsubs.forEach(u => u()); unsubs = []; if (salesUnsub) salesUnsub(); salesUnsub = null; salesDay = null;
+    unsubs.forEach(u => u()); unsubs = []; if (salesUnsub) salesUnsub(); if (checksUnsub) checksUnsub(); salesUnsub = checksUnsub = null; salesDay = null;
     Store.ready = false;
     const owner = Store.isOwner();
     const jobs = [
@@ -86,7 +90,7 @@
     let userUnsub = null;
     auth.onAuthStateChanged(u => {
       if (userUnsub) userUnsub(); userUnsub = null;
-      unsubs.forEach(x => x()); unsubs = []; if (salesUnsub) salesUnsub(); salesUnsub = null; salesDay = null;
+      unsubs.forEach(x => x()); unsubs = []; if (salesUnsub) salesUnsub(); if (checksUnsub) checksUnsub(); salesUnsub = checksUnsub = null; salesDay = null;
       if (!u) { Store.user = null; Store.ready = true; emit(); return; }
       const ref = fs.collection("users").doc(u.uid);
       userUnsub = ref.onSnapshot(async snap => {
@@ -161,7 +165,7 @@
   Store.openDay = d => {
     const id = new Date().toISOString().slice(0, 10) + "-" + uid().slice(0, 4);
     const day = { breadMoves: [], carried: 0, ...d, status: "open", openedAt: Date.now(), addedLoaves: 0, breadCount: null, cashCount: null };
-    if (!live) { db.days.push({ id, ...day }); db.state = { dayId: id }; db.sales = []; demoSave(); emit(); return; }
+    if (!live) { db.days.push({ id, ...day }); db.state = { dayId: id }; db.sales = []; db.checks = []; demoSave(); emit(); return; }
     const b = fs.batch();
     b.set(fs.collection("days").doc(id), stamp(day));
     b.set(fs.collection("state").doc("current"), { dayId: id, openedAt: day.openedAt });
@@ -173,7 +177,7 @@
   };
   Store.closeDay = (id, summary) => {
     const patch = { status: "closed", closedAt: Date.now(), summary };
-    if (!live) { Object.assign(db.days.find(d => d.id === id), patch); db.state = {}; db.sales = []; demoSave(); emit(); return; }
+    if (!live) { Object.assign(db.days.find(d => d.id === id), patch); db.state = {}; db.sales = []; db.checks = []; demoSave(); emit(); return; }
     const b = fs.batch();
     b.update(fs.collection("days").doc(id), patch);
     b.set(fs.collection("state").doc("current"), { dayId: null });
@@ -185,6 +189,27 @@
     const ref = fs.collection("sales").doc(), s = stamp(sale);
     settle(ref.set(s)).catch(e => { console.error(e); if (Store.onError) Store.onError(e); });
     return { id: ref.id, ...s };
+  };
+  // Open checks. A check is saved with its lines; paying it makes a normal sale and marks the check paid.
+  Store.saveCheck = (id, data) => {
+    if (!live) {
+      if (id) Object.assign(db.checks.find(c => c.id === id), data);
+      else db.checks.push({ id: uid(), ...data, status: "open", by: Store.user.id, byName: Store.user.name });
+      demoSave(); emit(); return;
+    }
+    if (id) { settle(fs.collection("checks").doc(id).update({ ...data, editedBy: Store.user.name || "" })).catch(e => Store.onError && Store.onError(e)); return; }
+    settle(fs.collection("checks").doc().set(stamp({ ...data, status: "open" }))).catch(e => Store.onError && Store.onError(e));
+  };
+  Store.payCheck = (id, sale) => {
+    if (!live) { const s = Store.addSale({ ...sale, checkId: id }); db.checks = db.checks.filter(c => c.id !== id); demoSave(); emit(); return s; }
+    const ref = fs.collection("sales").doc(), s = stamp({ ...sale, checkId: id }), b = fs.batch();
+    b.set(ref, s); b.update(fs.collection("checks").doc(id), { status: "paid", saleId: ref.id, paidBy: Store.user.name || "" });
+    settle(b.commit()).catch(e => { console.error(e); if (Store.onError) Store.onError(e); });
+    return { id: ref.id, ...s };
+  };
+  Store.cancelCheck = id => {
+    if (!live) { db.checks = db.checks.filter(c => c.id !== id); demoSave(); emit(); return; }
+    return settle(fs.collection("checks").doc(id).update({ status: "cancelled", cancelledBy: Store.user.name || "" }));
   };
   Store.voidSale = id => {
     const patch = { void: true, voidBy: Store.user.name || "", voidAt: Date.now() };

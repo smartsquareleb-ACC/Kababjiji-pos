@@ -28,7 +28,7 @@
   C.breadTotal = (day, lpb) => day ? (day.carried || 0) + (day.startBundles || 0) * lpb + (day.startLoose || 0) + (day.addedLoaves || 0) - C.breadOut(day) : 0;
 
   // Everything the owner needs about one day, from the day document and its sales.
-  C.summary = (day, sales, lpb) => {
+  C.summary = (day, sales, lpb, checks) => {
     const live = (sales || []).filter(s => !s.void);
     let totalL = 0, breadSold = 0, inUSD = 0, inLBP = 0, breadQ = 0, breadM = 0, otherL = 0;
     const byItem = {};
@@ -43,9 +43,13 @@
         if (l.bread > 0) { breadSold += l.bread * l.qty; breadQ += l.bread * l.qty; breadM += m; } else otherL += m;
       }
     }
+    // Sandwiches on open checks (eaten, not paid yet) use bread but no money is in the drawer yet.
+    let checkBread = 0, checksL = 0;
+    for (const c of checks || []) for (const l of c.lines) { checkBread += (l.bread || 0) * l.qty; checksL += l.priceL * l.qty; }
     const breadTotal = C.breadTotal(day, lpb);
     return {
-      orders: live.length, totalL, breadTotal, breadSold, breadLeft: breadTotal - breadSold,
+      orders: live.length, totalL, breadTotal, breadSold, breadLeft: breadTotal - breadSold - checkBread,
+      openChecks: (checks || []).length, checkBread, checksL,
       inUSD, inLBP, byItem, otherL,
       // money one loaf should bring in: the average price of bread items sold today
       loafL: breadQ ? breadM / breadQ : null,
@@ -58,11 +62,12 @@
   C.breadCheck = (day, sum, lpb, fallbackLoafL) => {
     if (!day || !day.breadCount) return null;
     const counted = day.breadCount.bundles * lpb + day.breadCount.loose;
-    const used = sum.breadTotal - counted, missing = used - sum.breadSold;
+    const used = sum.breadTotal - counted, missing = used - sum.breadSold - (sum.checkBread || 0);
     // More bread counted than there was today: the count (or the starting stock) was typed wrong.
     if (used < 0) return { counted, used, sold: sum.breadSold, invalid: true };
     const loafL = sum.loafL || fallbackLoafL || 0;
-    return { counted, used, sold: sum.breadSold, missing, missingL: Math.round(missing * loafL), loafL };
+    // Money is expected only for paid sandwiches; loaves on open checks are not missing.
+    return { counted, used, sold: sum.breadSold, onChecks: sum.checkBread || 0, missing, missingL: Math.round(missing * loafL), loafL, paidUsed: used - (sum.checkBread || 0) };
   };
 
   // Drawer count vs expected. diff < 0 means money is missing. Values in LBP at the rate given.
@@ -73,7 +78,7 @@
     const out = { counted, expected, diff: counted - expected, usd: day.cashCount.usd, lbp: day.cashCount.lbp };
     if (bread && !bread.invalid) {
       const float = Math.round(day.openLBP || 0) + Math.round((day.openUSD || 0) * rate);
-      out.byBread = float + Math.round(bread.used * bread.loafL) + sum.otherL;
+      out.byBread = float + Math.round(bread.paidUsed * bread.loafL) + sum.otherL;
       out.diffBread = counted - out.byBread;
     }
     return out;
