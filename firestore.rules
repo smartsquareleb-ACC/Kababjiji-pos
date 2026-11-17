@@ -2,8 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{db}/documents {
     function signedIn() { return request.auth != null; }
-    function path(p) { return /databases/$(db)/documents/$(p); }
-    function role() { return signedIn() && exists(path("users/" + request.auth.uid)) ? get(path("users/" + request.auth.uid)).data.role : "none"; }
+    // Paths are written out in full: a "a/b" string inside $() is one segment, not two.
+    function userDoc() { return /databases/$(db)/documents/users/$(request.auth.uid); }
+    function ownerDoc() { return /databases/$(db)/documents/state/owner; }
+    function role() { return signedIn() && exists(userDoc()) ? get(userDoc()).data.role : "none"; }
+    // The very first account claims "owner" once, in the same write that creates state/owner.
+    function claimsOwner(uid) { return request.resource.data.role == "owner" && !exists(ownerDoc()) && getAfter(ownerDoc()).data.uid == uid; }
     function owner() { return role() == "owner"; }
     function staff() { return role() in ["cashier", "owner"]; }
 
@@ -11,9 +15,11 @@ service cloud.firestore {
     // A sign-up creates its own profile as "pending". The very first account claims "owner" once (see state/owner).
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || owner());
-      allow create: if signedIn() && request.auth.uid == uid && (request.resource.data.role == "pending"
-        || (request.resource.data.role == "owner" && !exists(path("state/owner")) && getAfter(path("state/owner")).data.uid == uid));
-      allow update, delete: if owner();
+      allow create: if signedIn() && request.auth.uid == uid && (request.resource.data.role == "pending" || claimsOwner(uid));
+      // A waiting account may still claim owner if nobody has yet (e.g. the first sign-up's claim did not go through).
+      allow update: if owner() || (signedIn() && request.auth.uid == uid && resource.data.role == "pending" && claimsOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["role"]));
+      allow delete: if owner();
     }
 
     // Menu, prices and settings: everyone on staff reads (retail prices only), the owner edits.
@@ -34,7 +40,7 @@ service cloud.firestore {
     match /sales/{id} {
       allow read: if owner() || (staff() && resource.data.by == request.auth.uid);
       allow create: if staff() && request.resource.data.by == request.auth.uid && request.resource.data.void == false
-        && request.resource.data.dayId == get(path("state/current")).data.dayId;
+        && request.resource.data.dayId == get(/databases/$(db)/documents/state/current).data.dayId;
       allow update, delete: if owner();
     }
   }

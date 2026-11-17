@@ -37,7 +37,7 @@
   function demoSave() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
 
   // ---------- Live mode ----------
-  let fs, auth, unsubs = [], salesUnsub = null, salesDay = null, signingUp = false;
+  let fs, auth, unsubs = [], salesUnsub = null, salesDay = null, signingUp = false, claimTried = false;
   const stamp = d => ({ ...d, by: Store.user.id, byName: Store.user.name || "", at: firebase.firestore.FieldValue.serverTimestamp() });
   // Firestore saves on the device at once and uploads by itself when the internet is back,
   // so never block the till waiting for the upload. Online, wait a moment so a refusal still shows.
@@ -94,6 +94,14 @@
         if (!snap.exists) { if (signingUp) return; await ref.set({ name: u.displayName || u.email.split("@")[0], email: u.email, role: "pending" }); return; }
         const prev = Store.user && Store.user.role;
         Store.user = { id: u.uid, email: u.email, ...snap.data() };
+        // Nobody is owner yet (a new project): a waiting account claims it.
+        if (Store.user.role === "pending" && !claimTried) {
+          claimTried = true;
+          try {
+            const own = fs.collection("state").doc("owner");
+            if (!(await own.get()).exists) { const bt = fs.batch(); bt.set(own, { uid: u.uid, at: Date.now() }); bt.update(ref, { role: "owner" }); await bt.commit(); return; }
+          } catch (e) { console.warn("owner claim", e); }
+        }
         if (Store.isStaff()) { if (prev !== Store.user.role) subscribe(); else emit(); }
         else { Store.ready = true; emit(); }
       }, err => { console.error("user", err); Store.ready = true; emit(); });
