@@ -152,7 +152,7 @@
   function renderChange() {
     const c = payCalc(), el = $("change");
     if (!c.t) { el.className = "change"; el.innerHTML = '<span class="hint" style="margin:0">Enter what the customer gave to see the change.</span>'; $("btnPay").disabled = true; return; }
-    if (!c.paid) { el.className = "change"; el.innerHTML = `<span>To pay: <b>${L(c.t)}</b> or <b>${U(LtoU(c.t))}</b></span><span class="hint" style="margin:0">Leave both boxes empty and press Complete sale if the customer paid the exact amount.</span>`; $("btnPay").disabled = false; return; }
+    if (!c.paid) { el.className = "change"; el.innerHTML = `<span>To pay: <b>${L(c.t)}</b> or <b>${U(LtoU(c.t))}</b></span><span class="hint" style="margin:0">Exact money? Tap <b>Paid exact in $</b> or <b>Paid exact in LBP</b>.</span>`; $("btnPay").disabled = false; return; }
     if (c.change < 0) { el.className = "change due"; el.innerHTML = `<span>Still owed</span><span class="big">${L(c.owed)}</span><span>${U(LtoU(c.owed))}</span>`; $("btnPay").disabled = true; return; }
     el.className = "change ok";
     const give = changeMode === "lbp" ? L(c.changeLBP) : changeMode === "usd" ? U(c.changeUSD) : `${U(c.changeUSD)} + ${L(c.changeLBP)}`;
@@ -169,6 +169,15 @@
   $("qLBP").addEventListener("click", e => { const b = e.target.closest("[data-ql]"); if (b) { $("paidLBP").value = (Math.round(num($("paidLBP").value)) + num(b.dataset.ql)).toLocaleString("en-US"); renderChange(); } });
   function clearOrder() { cart = {}; $("paidUSD").value = ""; $("paidLBP").value = ""; changeMode = "lbp"; renderSell(); }
   $("btnClear").addEventListener("click", clearOrder);
+  // One tap when the customer pays the exact amount: fills it in and completes the sale.
+  function payExact(cur) {
+    const t = cartTotalL(); if (!t) { toast("Tap an item first"); return; }
+    $("paidUSD").value = cur === "usd" ? (Math.ceil(t / R() * 100) / 100).toString() : "";
+    $("paidLBP").value = cur === "lbp" ? t.toLocaleString("en-US") : "";
+    changeMode = "lbp"; renderChange(); $("btnPay").click();
+  }
+  $("btnExactUSD").addEventListener("click", () => payExact("usd"));
+  $("btnExactLBP").addEventListener("click", () => payExact("lbp"));
   $("btnPay").addEventListener("click", () => {
     const c = payCalc(); if (!c.t || !db.state.dayId) return;
     if (c.paid && c.change < 0) return;
