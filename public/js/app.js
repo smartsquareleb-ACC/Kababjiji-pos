@@ -86,7 +86,7 @@
     const leftL = h.breadLeftLoaves != null ? h.breadLeftLoaves : h.breadLeftBundles != null ? h.breadLeftBundles * lpb : 0;
     const ls = Calc.splitBread(Math.max(0, leftL), lpb);
     const f = (id, label, v) => `<div class="field"><label for="${id}">${label}</label><input id="${id}" inputmode="numeric" value="${v}"></div>`;
-    $("modalRoot").innerHTML = `<div class="modal"><div class="box"><img src="assets/logo.png" alt="Kabab Jiji" style="display:block;width:200px;margin:0 auto 8px"><h3>${T("Start the day", "افتح النهار")}</h3>
+    $("modalRoot").innerHTML = `<div class="modal"><div class="box"><img src="assets/logo.png" alt="Kabab Jiji" style="display:block;width:200px;margin:0 auto 8px">${Store.isOwner() ? `<button id="odX" aria-label="${T("Close", "سكّر")}" style="float:inline-end;border:1px solid var(--line);background:var(--soft);border-radius:10px;width:40px;height:40px;font-size:18px;font-weight:700">✕</button>` : ""}<h3>${T("Start the day", "افتح النهار")}</h3>
     <h2 style="font-size:15px;margin:12px 0 4px">${T("Bread left from yesterday", "خبز باقي من مبارح")}</h2>
     <p class="hint">${last ? T("Filled in from yesterday's close. Change it if your count is different.", "معبّى من تسكيرة مبارح. غيّرو إذا عدّك مختلف.") : T("Enter any bread already in the shop.", "اكتب الخبز الموجود بالمحل.")}</p>
     <div class="row">${f("odLB", T("Bundles", "ربطات"), ls.bundles)}${f("odLL", T("Loose loaves", "أرغفة فرط"), ls.loose)}</div>
@@ -104,6 +104,7 @@
       $("odErr").textContent = c.keep < 0 ? T(`You are moving or wasting ${c.mv + c.ws} loaves but only ${c.left} are left.`, `عم تنقل أو تتلف ${c.mv + c.ws} رغيف بس الباقي ${c.left} بس.`) : "";
       $("odHint").innerHTML = T(`Kept from yesterday <b>${Math.max(0, c.keep)}</b> + new <b>${c.nw}</b> = <b>${Math.max(0, c.keep) + c.nw} loaves</b> to sell today (${lpb} per bundle).`, `باقي من مبارح <b>${Math.max(0, c.keep)}</b> + جديد <b>${c.nw}</b> = <b>${Math.max(0, c.keep) + c.nw} رغيف</b> للبيع اليوم (${lpb} بالربطة).`); };
     ["odLB", "odLL", "odMove", "odWaste", "odB", "odL"].forEach(i => $(i).addEventListener("input", hint)); hint();
+    if ($("odX")) $("odX").addEventListener("click", () => { skipStart = true; closeModal(); render(); });
     $("odGo").addEventListener("click", async () => {
       const c = calc(); if (c.keep < 0) return;
       $("odGo").disabled = true;
@@ -132,14 +133,17 @@
       <span style="display:flex;justify-content:space-between;align-items:flex-end;gap:6px"><span class="pr">${priceText(i)}</span>${cart[i.id] ? `<span class="qtyb">${cart[i.id]}</span>` : ""}</span></button>`).join("")
       || `<p class="hint">${T("The menu is loading…", "المنيو عم يحمّل…")}</p>`;
   }
+  $("stockbar").addEventListener("click", e => { if (e.target.id === "btnStartDay") { skipStart = false; openDayModal(); } });
   $("menu").addEventListener("click", e => {
     const b = e.target.closest("[data-add]"); if (!b) return;
     const it = db.menu.find(i => i.id === b.dataset.add); if (!it) return;
     if (!breadOk(it)) { toast(T("No bread left. Add bread first.", "ما في خبز. زيد خبز أول.")); return; }
     cart[it.id] = (cart[it.id] || 0) + 1; renderSell();
   });
+  let skipStart = false; // the owner closed the Start-the-day screen for now
   function renderStock() {
     if (!Store.isOwner()) return;
+    if (!day()) { $("stockbar").innerHTML = `<button class="btn primary" id="btnStartDay">${T("Start the day", "افتح النهار")}</button>`; return; }
     const s = sum(), left = s.breadLeft, sp = Calc.splitBread(left, S().lpb);
     const cls = left <= 0 ? "out" : left <= S().lpb * 2 ? "low" : "";
     $("stockbar").innerHTML = `<span class="chip ${cls}">${T("Bread left", "خبز باقي")} <b>${left}</b> ${T("loaves", "رغيف")}</span>
@@ -221,7 +225,8 @@
   $("btnExactUSD").addEventListener("click", () => payExact("usd"));
   $("btnExactLBP").addEventListener("click", () => payExact("lbp"));
   $("btnPay").addEventListener("click", () => {
-    const c = payCalc(); if (!c.t || !db.state.dayId) return;
+    const c = payCalc(); if (!c.t) return;
+    if (!db.state.dayId) { toast(T("Start the day first", "افتح النهار أول")); return; }
     // The customer's money must be entered and must cover the total.
     if (!c.paid) { toast(T("Enter how much the customer gave", "اكتب قديش عطاك الزبون")); return; }
     if (c.change < 0) return;
@@ -344,7 +349,7 @@
       (ss.length ? ss.map(x => `<tr class="${x.void ? "void" : ""}"><td>${x.no ? "#" + x.no + " " : ""}${fmtTime(x.t)}</td><td>${x.debtPay ? `<b>${T("Debt paid", "دين اندفع")}:</b> ${esc(x.label || "")}` : x.lines.map(l => l.qty + "× " + esc(nameOf(l))).join("، ")}${x.debt ? ` <b style="color:var(--warn)">· ${T("debt", "دين")}: ${esc(x.label || "")}</b>` : ""}</td><td class="n">${L(x.totalL)}</td><td>${esc(x.byName || "")}</td><td>${x.void ? T("Voided", "ملغى") : x.debt || x.debtPay ? "" : `<button class="mini" data-void="${x.id}">${T("Void", "إلغاء")}</button>`}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">${T("No orders yet", "ما في طلبات بعد")}</td></tr>`) + "</tbody>";
     const hist = db.days.filter(d => d.status === "closed" && d.summary).reverse();
     $("history").innerHTML = `<thead><tr><th>${T("Day", "النهار")}</th><th class="n">${T("Sales", "البيع")}</th><th class="n">${T("Sandwiches", "سندويشات")}</th><th class="n">${T("Drawer", "الصندوق")}</th></tr></thead><tbody>` +
-      (hist.length ? hist.map(d => { const h = d.summary; return `<tr><td>${fmtDate(d.openedAt)}</td><td class="n">${L(h.salesL)}</td><td class="n">${h.sandwiches}${h.breadMissing > 0 ? ` <span style="color:var(--bad)">(${h.breadMissing} ${T("missing", "ناقص")})</span>` : ""}</td><td class="n" style="color:${h.drawerDiff == null ? "var(--muted)" : h.drawerDiff < -S().tol ? "var(--bad)" : "var(--good)"}">${h.drawerDiff == null ? T("Not counted", "ما انعدّ") : (h.drawerDiff < 0 ? T("Short ", "ناقص ") : "") + L(Math.abs(h.drawerDiff))}</td></tr>`; }).join("") : `<tr><td colspan="4" class="empty">${T("No closed days yet", "ما في أيام مسكّرة بعد")}</td></tr>`) + "</tbody>";
+      (hist.length ? hist.map(d => { const h = d.summary; return `<tr data-day="${d.id}" style="cursor:pointer"><td>${fmtDate(d.openedAt)}<br><small style="color:var(--accent)">${T("Tap for report", "كبوس للتقرير")}</small></td><td class="n">${L(h.salesL)}</td><td class="n">${h.sandwiches}${h.breadMissing > 0 ? ` <span style="color:var(--bad)">(${h.breadMissing} ${T("missing", "ناقص")})</span>` : ""}</td><td class="n" style="color:${h.drawerDiff == null ? "var(--muted)" : h.drawerDiff < -S().tol ? "var(--bad)" : "var(--good)"}">${h.drawerDiff == null ? T("Not counted", "ما انعدّ") : (h.drawerDiff < 0 ? T("Short ", "ناقص ") : "") + L(Math.abs(h.drawerDiff))}</td></tr>`; }).join("") : `<tr><td colspan="4" class="empty">${T("No closed days yet", "ما في أيام مسكّرة بعد")}</td></tr>`) + "</tbody>";
   }
   $("openChecks").addEventListener("click", async e => {
     const b = e.target.closest("[data-cancel]"); if (!b) return;
@@ -364,17 +369,82 @@
     if (what === "ask") { const oc = db.checks.length;
       // The day cannot close while a check is open: it must be paid or saved as a debt first.
       if (oc) { area.innerHTML = `<div class="verdict bad" style="margin-bottom:8px"><div class="h">${T(`Can't close: ${oc} open check${oc > 1 ? "s" : ""}`, `ما فيك تسكّر: في ${oc} حساب مفتوح`)}</div><p>${T(`${L(sum().checksL)} is still on open checks. On the Sell screen, get each one paid or tap <b>Save as debt</b>.`, `في ${L(sum().checksL)} عالحسابات المفتوحة. من شاشة البيع، خلّي كل حساب يندفع أو كبوس <b>سجّل دين</b>.`)}</p></div><div class="row"><button class="btn" data-close="no">${T("OK", "تمام")}</button></div>`; return; }
-      area.innerHTML = `<p><b>${T("Close today and start a new day?", "تسكّر اليوم وتبلّش نهار جديد؟")}</b></p><div class="row"><button class="btn" data-close="no">${T("Cancel", "إلغاء")}</button><button class="btn danger" data-close="yes">${T("Yes, close day", "إيه، سكّر النهار")}</button></div>`; return; }
+      closeDayModal(); return; }
     if (what === "no") { area.innerHTML = closeBtn(); return; }
-    if (what === "yes" && day()) {
-      if (db.checks.length) { area.innerHTML = closeBtn(); toast(T("Pay or save the open checks as debt first", "ادفع أو سجّل الحسابات المفتوحة كدين أول")); return; }
-      const s = sum(), br = bread(), c = Calc.cashCheck(day(), s, R(), br), left = br && !br.invalid ? br.counted : s.breadLeft;
-      await Store.closeDay(day().id, { salesL: s.totalL, orders: s.orders, sandwiches: s.breadSold, breadMissing: br && !br.invalid ? br.missing : null,
-        drawerDiff: c ? c.diff : null, breadLeftBundles: Math.floor(left / S().lpb), breadLeftLoaves: left, rate: R(), debtL: s.debtL, debtPaidL: s.debtPaidL });
-      document.querySelectorAll(".close-area").forEach(a => a.innerHTML = closeBtn()); toast(T("Day closed", "النهار تسكّر")); go("sell");
-    }
   });
-
+  // Closing the day, step by step: what should be there, count the bread and the drawer, decide about the
+  // leftover bread, then close. The closing report is kept in Sales → Past days.
+  function closeDayModal() {
+    const d = day(); if (!d) return;
+    const s = sum(), lpb = S().lpb, sp = Calc.splitBread(Math.max(0, s.breadLeft), lpb);
+    const f = (id, label, v, mode) => `<div class="field"><label for="${id}">${label}</label><input id="${id}" inputmode="${mode || "numeric"}" value="${v}"></div>`;
+    const h2 = t => `<h2 style="font-size:16px;margin:16px 0 6px">${t}</h2>`;
+    $("modalRoot").innerHTML = `<div class="modal"><div class="box" style="max-width:560px"><h3>${T("Close the day", "سكّر النهار")}</h3>
+      ${h2(T("1. Today's report", "1. تقرير اليوم"))}
+      <dl class="kv"><dt>${T("Orders", "الطلبات")}</dt><dd>${s.orders}</dd><dt>${T("Sales total", "مجموع البيع")}</dt><dd>${L(s.totalL)}</dd>
+      ${s.debts ? `<dt>${T("Sold on debt, not in drawer", "انباع دين، مش بالصندوق")}</dt><dd>${L(s.debtL)}</dd>` : ""}
+      <dt>${T("Bread that should be left", "الخبز اللي لازم يكون باقي")}</dt><dd>${s.breadLeft} ${T("loaves", "رغيف")} (${sp.bundles} ${T("bundles", "ربطة")} + ${sp.loose})</dd>
+      <dt><b>${T("Dollars that should be in drawer", "الدولار اللي لازم يكون بالصندوق")}</b></dt><dd><b>${U(s.expUSD)}</b></dd>
+      <dt><b>${T("Lira that should be in drawer", "الليرة اللي لازم تكون بالصندوق")}</b></dt><dd><b>${L(s.expLBP)}</b></dd></dl>
+      ${h2(T("2. Count the bread left", "2. عدّ الخبز الباقي"))}
+      <div class="row">${f("cdB", T("Bundles", "ربطات"), "")}${f("cdL", T("Loose loaves", "أرغفة فرط"), "")}</div><div id="cdBreadV"></div>
+      ${h2(T("3. Count the drawer", "3. عدّ الصندوق"))}
+      <div class="row">${f("cdU", T("Dollars in drawer (US$)", "دولار بالصندوق"), "", "decimal")}${f("cdLBP", T("Lira in drawer (LBP)", "ليرة بالصندوق"), "")}</div><div id="cdCashV"></div>
+      ${h2(T("4. What to do with the bread left?", "4. شو بدك تعمل بالخبز الباقي؟"))}
+      <div class="row">${f("cdMove", T("Move to main shop (loaves)", "نقل عالمحل الرئيسي (أرغفة)"), 0)}${f("cdWaste", T("Waste (loaves)", "تالف (أرغفة)"), 0)}</div>
+      <p class="hint" id="cdKeep"></p><div class="err" id="cdErr"></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="cdNo">${T("Cancel", "إلغاء")}</button><button class="btn danger" id="cdGo" disabled>${T("Close the day", "سكّر النهار")}</button></div></div></div>`;
+    const v = id => Math.max(0, Math.round(num($(id).value))), filled = id => $(id).value.trim() !== "";
+    const calc = () => {
+      const breadIn = filled("cdB") || filled("cdL"), cashIn = filled("cdU") || filled("cdLBP");
+      const counted = v("cdB") * lpb + v("cdL");
+      const dd = { ...d, breadCount: breadIn ? { bundles: v("cdB"), loose: v("cdL"), t: Date.now() } : null,
+        cashCount: cashIn ? { usd: num($("cdU").value), lbp: Math.round(num($("cdLBP").value)), t: Date.now() } : null };
+      const br = breadIn ? Calc.breadCheck(dd, s, lpb, menuLoafL()) : null, c = cashIn ? Calc.cashCheck(dd, s, R(), br) : null;
+      const mv = v("cdMove"), ws = v("cdWaste"), keep = counted - mv - ws;
+      return { breadIn, cashIn, counted, dd, br, c, mv, ws, keep };
+    };
+    const show = () => { const x = calc();
+      $("cdBreadV").innerHTML = !x.br ? "" : x.br.invalid ? `<div class="verdict warn"><div class="h">${T("Check the count", "راجع العدّ")}</div><p>${T(`That is more than the ${s.breadTotal} loaves you had today.`, `هيدا أكتر من الـ ${s.breadTotal} رغيف اللي كانوا عندك اليوم.`)}</p></div>`
+        : x.br.missing > 0 ? `<div class="verdict bad"><div class="h">${T(`${x.br.missing} loaves not rung up`, `${x.br.missing} رغيف ما انسجلوا`)}</div><p>${T("About", "تقريباً")} ${L(x.br.missingL)} (${U(LtoU(x.br.missingL))})</p></div>`
+        : x.br.missing < 0 ? `<div class="verdict warn"><div class="h">${T(`${-x.br.missing} extra loaves`, `${-x.br.missing} رغيف زيادة`)}</div></div>`
+        : `<div class="verdict good"><div class="h">${T("Bread matches sales", "الخبز مظبوط مع البيع")}</div></div>`;
+      $("cdCashV").innerHTML = x.c ? verdictMoney(x.c.diff, T("Drawer", "الصندوق")) : "";
+      $("cdKeep").innerHTML = x.breadIn ? T(`Kept for tomorrow: <b>${Math.max(0, x.keep)} loaves</b>`, `بيبقى لبكرا: <b>${Math.max(0, x.keep)} رغيف</b>`) : "";
+      $("cdErr").textContent = x.br && x.br.invalid ? T("Fix the bread count", "صلّح عدّ الخبز") : x.keep < 0 ? T(`Only ${x.counted} loaves are left to move or waste.`, `في ${x.counted} رغيف بس باقيين للنقل أو التالف.`) : "";
+      $("cdGo").disabled = !x.breadIn || !x.cashIn || x.keep < 0 || (x.br && x.br.invalid);
+    };
+    ["cdB", "cdL", "cdU", "cdLBP", "cdMove", "cdWaste"].forEach(i => $(i).addEventListener("input", show)); show();
+    $("cdNo").addEventListener("click", closeModal);
+    $("cdGo").addEventListener("click", async () => {
+      if (db.checks.length) { toast(T("Pay or save the open checks as debt first", "ادفع أو سجّل الحسابات المفتوحة كدين أول")); return; }
+      const x = calc(); if ($("cdGo").disabled) return;
+      $("cdGo").disabled = true;
+      await Store.updateDay(d.id, { breadCount: x.dd.breadCount, cashCount: x.dd.cashCount });
+      await Store.closeDay(d.id, { salesL: s.totalL, orders: s.orders, sandwiches: s.breadSold, breadMissing: x.br ? x.br.missing : null,
+        drawerDiff: x.c ? x.c.diff : null, expUSD: s.expUSD, expLBP: s.expLBP, countedUSD: x.dd.cashCount.usd, countedLBP: x.dd.cashCount.lbp,
+        breadCounted: x.counted, closeMove: x.mv, closeWaste: x.ws, breadLeftBundles: Math.floor(x.keep / lpb), breadLeftLoaves: x.keep,
+        rate: R(), debtL: s.debtL, debtPaidL: s.debtPaidL, closedBy: Store.user.name || "" });
+      closeModal(); skipStart = false; document.querySelectorAll(".close-area").forEach(a => a.innerHTML = closeBtn()); toast(T("Day closed", "النهار تسكّر")); go("sell");
+    });
+  }
+  // The closing report of a past day.
+  function dayReport(id) {
+    const d = db.days.find(x => x.id === id); if (!d || !d.summary) return; const h = d.summary;
+    const row = (k, v) => v == null ? "" : `<dt>${k}</dt><dd>${v}</dd>`;
+    $("modalRoot").innerHTML = `<div class="modal"><div class="box"><h3>${fmtDate(d.openedAt)}</h3><dl class="kv">
+      ${row(T("Orders", "الطلبات"), h.orders)}${row(T("Sales total", "مجموع البيع"), L(h.salesL))}${row(T("Sandwiches", "سندويشات"), h.sandwiches)}
+      ${h.debtL ? row(T("Sold on debt", "انباع دين"), L(h.debtL)) : ""}${h.debtPaidL ? row(T("Old debts paid", "ديون قديمة اندفعت"), L(h.debtPaidL)) : ""}
+      ${row(T("Dollars expected / counted", "دولار متوقع / معدود"), h.expUSD == null ? null : `${U(h.expUSD)} / ${U(h.countedUSD || 0)}`)}
+      ${row(T("Lira expected / counted", "ليرة متوقعة / معدودة"), h.expLBP == null ? null : `${L(h.expLBP)} / ${L(h.countedLBP || 0)}`)}
+      ${row(T("Drawer", "الصندوق"), h.drawerDiff == null ? T("Not counted", "ما انعدّ") : Calc.verdict(h.drawerDiff, S().tol) === "ok" ? T("Correct", "مظبوط") : (h.drawerDiff < 0 ? T("Short ", "ناقص ") : T("Over ", "زيادة ")) + L(Math.abs(h.drawerDiff)))}
+      ${row(T("Bread counted at close", "الخبز المعدود عالتسكير"), h.breadCounted)}${row(T("Loaves not rung up", "أرغفة ما انسجلت"), h.breadMissing)}
+      ${row(T("Moved to main shop", "انتقل عالمحل الرئيسي"), h.closeMove)}${row(T("Waste", "تالف"), h.closeWaste)}${row(T("Kept for next day", "بقي للنهار الجاي"), h.breadLeftLoaves)}
+      ${row(T("Closed by", "سكّر"), h.closedBy ? esc(h.closedBy) : null)}</dl>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="drOk">${T("Close", "سكّر")}</button></div></div></div>`;
+    $("drOk").addEventListener("click", closeModal);
+  }
+  $("history").addEventListener("click", e => { const r = e.target.closest("[data-day]"); if (r) dayReport(r.dataset.day); });
 
   /* ---------- shared till: who is working + PIN ---------- */
   let pinFor = null, pinBuf = "", pinFirst = null;
@@ -588,9 +658,13 @@
     if (currentView !== "sell" && !Store.isOwner()) currentView = "sell";
     const d = day();
     if (!d) {
-      $("dayLabel").textContent = ""; showView("sell"); renderSell();
-      if (!modalOpen()) {
-        if (Store.isOwner()) openDayModal();
+      // An owner who closed the Start-the-day screen can still use Sales, Clients and Settings.
+      const v = skipStart && Store.isOwner() && ["report", "clients", "settings"].includes(currentView) ? currentView : "sell";
+      $("dayLabel").textContent = ""; showView(v); renderSell();
+      if (v === "report") renderReport(); if (v === "clients") renderClients(); if (v === "settings") renderSettings();
+      if (!modalOpen() && !(skipStart && Store.isOwner())) {
+        // Whoever is on a till that can open the day must fill it in; only an owner can close it with ✕.
+        if (Store.account && Store.account.role === "owner") openDayModal();
         else $("modalRoot").innerHTML = `<div class="modal"><div class="box"><h3 id="notStarted">${T("The day has not started", "النهار ما بلّش بعد")}</h3><p class="hint">${T("The owner opens the day with the bread and starting cash. This screen opens by itself as soon as they do.", "المالك بيفتح النهار بالخبز ومصاري أول النهار. هالشاشة بتفتح لحالها أول ما يفتحو.")}</p></div></div>`;
       }
       return;
