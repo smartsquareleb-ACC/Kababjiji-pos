@@ -242,7 +242,7 @@
   };
   Store.closeDay = (id, summary) => {
     const patch = { status: "closed", closedAt: Date.now(), summary };
-    if (!live) { Object.assign(db.days.find(d => d.id === id), patch); db.state = {}; db.sales = []; db.checks = []; demoSave(); emit(); return; }
+    if (!live) { Object.assign(db.days.find(d => d.id === id), patch); db.salesArchive = [...(db.salesArchive || []), ...db.sales]; db.state = {}; db.sales = []; db.checks = []; demoSave(); emit(); return; }
     const b = fs.batch();
     b.update(fs.collection("days").doc(id), patch);
     b.set(fs.collection("state").doc("current"), { dayId: null });
@@ -308,6 +308,12 @@
     const patch = { void: true, voidBy: Store.user.name || "", voidAt: Date.now() };
     if (!live) { Object.assign(db.sales.find(s => s.id === id), patch); demoSave(); emit(); return; }
     return settle(fs.collection("sales").doc(id).update(patch));
+  };
+  // Reports: every sale made between two times (owner only).
+  Store.fetchSales = async (from, to) => {
+    if (!live) return [...(db.salesArchive || []), ...db.sales].filter(x => x.t >= from && x.t < to);
+    const q = await fs.collection("sales").where("t", ">=", from).where("t", "<", to).get();
+    return q.docs.map(x => ({ id: x.id, ...x.data() }));
   };
   Store.resetDemo = () => { try { localStorage.removeItem(KEY); } catch (e) {} demoLoad(); Store.account = { ...db.users[0] }; setUser(); emit(); };
 

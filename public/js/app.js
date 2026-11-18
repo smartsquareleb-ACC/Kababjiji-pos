@@ -42,6 +42,7 @@
   $("demoRole").addEventListener("change", e => { Store.setDemoRole(e.target.value); go("sell"); });
   function go(v) {
     if (v !== "sell" && !Store.isOwner()) v = "sell";
+    if (v === "reports") rpKey = ""; // fresh numbers each time the Reports tab is opened
     currentView = v;
     document.querySelectorAll("#nav button[data-view]").forEach(b => b.setAttribute("aria-current", b.dataset.view === v ? "page" : "false"));
     render();
@@ -586,6 +587,128 @@
   $("clSearch").addEventListener("input", renderClients);
   $("clients").addEventListener("click", e => { const b = e.target.closest("[data-clpay]"); if (b) debtsModal(b.dataset.clpay); });
 
+  /* ---------- reports (owner): any date range ---------- */
+  let rpRange = "today", rpData = null, rpKey = "", rpBusy = false;
+  const dayStart = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const isoDay = t => { const d = new Date(t); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  function rpBounds() {
+    const now = Date.now(), t0 = dayStart(now), D = 864e5;
+    if (rpRange === "yesterday") return [t0 - D, t0];
+    if (rpRange === "week") { const wd = (new Date(t0).getDay() + 6) % 7; return [t0 - wd * D, t0 + D]; } // from Monday
+    if (rpRange === "month") { const d = new Date(t0); d.setDate(1); return [d.getTime(), t0 + D]; }
+    if (rpRange === "custom") { const f = $("rpFrom").value, to = $("rpTo").value;
+      const a = f ? new Date(f + "T00:00").getTime() : t0, b = to ? new Date(to + "T00:00").getTime() + D : t0 + D; return [Math.min(a, b - D), b]; }
+    return [t0, t0 + D];
+  }
+  // Everything for the period, worked out from the sales, the day closings and the debts.
+  function rpCompute(sales, from, to) {
+    const live = sales.filter(x => !x.void), sold = live.filter(x => !x.debtPay), lpb = S().lpb;
+    const r = { from, to, orders: sold.length, totalL: 0, inUSD: 0, inLBP: 0, items: {}, hours: Array(24).fill(0), hoursN: Array(24).fill(0), people: {} };
+    for (const x of live) { r.inUSD += (x.paidUSD || 0) - (x.changeUSD || 0); r.inLBP += (x.paidLBP || 0) - (x.changeLBP || 0); }
+    for (const x of sold) {
+      r.totalL += x.totalL;
+      const h = new Date(x.t).getHours(); r.hours[h] += x.totalL; r.hoursN[h]++;
+      const who = x.byName || "?"; const p = r.people[who] || (r.people[who] = { orders: 0, totalL: 0, closes: 0, diff: 0 }); p.orders++; p.totalL += x.totalL;
+      for (const l of x.lines) { const k = nameOf(l); const it = r.items[k] || (r.items[k] = { qty: 0, totalL: 0 }); it.qty += l.qty; it.totalL += l.priceL * l.qty; }
+    }
+    r.avgL = r.orders ? r.totalL / r.orders : 0;
+    r.days = db.days.filter(d => d.openedAt >= from && d.openedAt < to).sort((a, b) => a.openedAt - b.openedAt);
+    const b = r.bread = { carriedIn: 0, received: 0, moved: 0, wasted: 0, carriedOver: 0, used: 0, sandwiches: 0, missing: 0, counted: 0 };
+    for (const d of r.days) {
+      const mv = (d.breadMoves || []).reduce((a, m) => { a[m.type] = (a[m.type] || 0) + m.loaves; return a; }, {});
+      b.carriedIn += d.carried || 0; b.received += (d.startBundles || 0) * lpb + (d.startLoose || 0) + (d.addedLoaves || 0);
+      b.moved += (mv.move || 0); b.wasted += (mv.waste || 0);
+      const h = d.summary; if (!h) continue;
+      b.moved += h.closeMove || 0; b.wasted += h.closeWaste || 0; b.carriedOver += h.breadLeftLoaves || 0; b.sandwiches += h.sandwiches || 0;
+      if (h.breadMissing != null) b.missing += h.breadMissing;
+      if (h.breadCounted != null) { b.counted++; b.used += Calc.breadTotal(d, lpb) - h.breadCounted; }
+      if (h.drawerDiff != null && h.closedBy) { const p = r.people[h.closedBy] || (r.people[h.closedBy] = { orders: 0, totalL: 0, closes: 0, diff: 0 }); p.closes++; p.diff += h.drawerDiff; }
+    }
+    const all = db.allDebts && db.allDebts.length ? db.allDebts : db.debts;
+    const nd = all.filter(d => d.t >= from && d.t < to), pd = all.filter(d => d.paidAt && d.paidAt >= from && d.paidAt < to);
+    r.debts = { newN: nd.length, newL: nd.reduce((a, d) => a + d.totalL, 0), paidN: pd.length, paidL: pd.reduce((a, d) => a + d.totalL, 0), openN: db.debts.length, openL: db.debts.reduce((a, d) => a + d.totalL, 0) };
+    r.sales = sold.sort((a, b) => a.t - b.t);
+    return r;
+  }
+  async function rpLoad() {
+    const [from, to] = rpBounds(), key = from + "-" + to;
+    if (rpBusy || (rpKey === key && rpData)) return;
+    rpBusy = true; $("rpBody").innerHTML = `<div class="panel"><p class="hint">${T("Loading…", "عم يحمّل…")}</p></div>`;
+    try { const sales = await Store.fetchSales(from, to); rpKey = key; rpData = rpCompute(sales, from, to); }
+    catch (e) { console.error(e); $("rpBody").innerHTML = `<div class="panel"><p class="err">${T("Could not load the report: ", "ما قدرنا نحمّل التقرير: ")}${esc(e.message)}</p></div>`; rpBusy = false; return; }
+    rpBusy = false; renderReports();
+  }
+  function renderReports() {
+    document.querySelectorAll("#rpRange [data-rg]").forEach(b => b.setAttribute("aria-pressed", b.dataset.rg === rpRange));
+    $("rpCustom").hidden = rpRange !== "custom";
+    const [from, to] = rpBounds();
+    if (!rpData || rpKey !== from + "-" + to) { rpLoad(); return; }
+    const r = rpData, P = (t, body) => `<div class="panel" style="margin-top:12px"><h2>${t}</h2>${body}</div>`;
+    const kv = rows => `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
+    const tbl = (head, rows, empty) => `<div class="tbl"><table><thead><tr>${head.map(h => `<th${h[1] ? ' class="n"' : ""}>${h[0]}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.join("") : `<tr><td colspan="${head.length}" class="empty">${empty || T("Nothing in this period", "ما في شي بهالفترة")}</td></tr>`}</tbody></table></div>`;
+    const period = isoDay(from) === isoDay(to - 1) ? fmtDate(from) : fmtDate(from) + " → " + fmtDate(to - 1);
+    const items = Object.entries(r.items).sort((a, b) => b[1].qty - a[1].qty);
+    const maxH = Math.max(1, ...r.hours), hrs = r.hours.map((v, h) => [h, v]).filter(([h]) => r.hoursN[h]);
+    const diffTxt = v => v == null ? T("Not counted", "ما انعدّ") : Calc.verdict(v, S().tol) === "ok" ? `<span style="color:var(--good)">${T("Correct", "مظبوط")}</span>` : `<span style="color:${v < 0 ? "var(--bad)" : "var(--warn)"}">${v < 0 ? T("Short ", "ناقص ") : T("Over ", "زيادة ")}${L(Math.abs(v))}</span>`;
+    const b = r.bread, dbt = r.debts;
+    $("rpBody").innerHTML =
+      P(T("Sales", "المبيع") + ` · <small style="font-weight:600">${period}</small>`, kv([
+        [T("Orders", "الطلبات"), r.orders], [T("Sales total", "مجموع البيع"), `${L(r.totalL)} · ${U(LtoU(r.totalL))}`],
+        [T("Average order", "معدّل الطلب"), `${L(r.avgL)} · ${U(LtoU(r.avgL))}`],
+        [T("Cash taken in (after change)", "مصاري فاتت (بعد الباقي)"), `${U(r.inUSD)} + ${L(r.inLBP)}`]])) +
+      P(T("Best sellers", "الأكتر مبيع"), tbl([[T("Item", "الصنف")], [T("Qty", "العدد"), 1], [T("Total", "المجموع"), 1]], items.map(([n, v]) => `<tr><td>${esc(n)}</td><td class="n">${v.qty}</td><td class="n">${L(v.totalL)}</td></tr>`))) +
+      P(T("Sales by hour", "المبيع حسب الساعة"), tbl([[T("Hour", "الساعة")], [T("Orders", "طلبات"), 1], [T("Total", "المجموع"), 1]], hrs.map(([h, v]) => `<tr><td style="white-space:nowrap">${String(h).padStart(2, "0")}:00<div style="height:8px;border-radius:4px;background:var(--accent);width:${Math.max(4, Math.round(v / maxH * 100))}%;min-width:4px;margin-top:3px"></div></td><td class="n">${r.hoursN[h]}</td><td class="n">${L(v)}</td></tr>`))) +
+      P(T("By person", "حسب الشخص"), tbl([[T("Name", "الاسم")], [T("Orders", "طلبات"), 1], [T("Sales", "البيع"), 1], [T("Days closed", "أيام سكّرها"), 1], [T("Drawer difference", "فرق الصندوق"), 1]],
+        Object.entries(r.people).sort((a, b) => b[1].totalL - a[1].totalL).map(([n, p]) => `<tr><td>${esc(n)}</td><td class="n">${p.orders}</td><td class="n">${L(p.totalL)}</td><td class="n">${p.closes}</td><td class="n">${p.closes ? diffTxt(p.diff) : "–"}</td></tr>`))) +
+      P(T("Daily closings", "تسكير الأيام"), tbl([[T("Day", "النهار")], [T("Expected", "المتوقع"), 1], [T("Counted", "المعدود"), 1], [T("Drawer", "الصندوق"), 1], [T("Closed by", "سكّر")]],
+        r.days.map(d => { const h = d.summary; return !h ? `<tr><td>${fmtDate(d.openedAt)}</td><td colspan="4" class="hint">${T("Still open", "بعدو مفتوح")}</td></tr>` :
+          `<tr data-day="${d.id}" style="cursor:pointer"><td>${fmtDate(d.openedAt)}</td><td class="n">${h.expUSD != null ? `${U(h.expUSD)}<br>${L(h.expLBP)}` : "–"}</td><td class="n">${h.countedUSD != null ? `${U(h.countedUSD)}<br>${L(h.countedLBP)}` : "–"}</td><td class="n">${diffTxt(h.drawerDiff)}</td><td>${esc(h.closedBy || "")}</td></tr>`; }))) +
+      P(T("Bread", "الخبز"), kv([
+        [T("Left from the day before", "باقي من النهار اللي قبل"), b.carriedIn], [T("New bread received", "خبز جديد وصل"), b.received],
+        [T("Moved to main shop", "انتقل عالمحل الرئيسي"), b.moved], [T("Waste", "تالف"), b.wasted], [T("Kept for the next day", "بقي للنهار الجاي"), b.carriedOver],
+        [T("Loaves used (from counts)", "أرغفة انصرفت (من العدّ)"), b.counted ? b.used : "–"], [T("Sandwiches sold", "سندويشات انباعت"), b.sandwiches],
+        [T("Loaves not rung up", "أرغفة ما انسجلت"), b.missing > 0 ? `<span style="color:var(--bad)">${b.missing}</span>` : b.missing]]) + `<p class="hint">${T("Counted in loaves, from closed days.", "بالأرغفة، من الأيام المسكّرة.")}</p>`) +
+      P(T("Debts", "الديون"), kv([
+        [T("New debts", "ديون جديدة"), `${dbt.newN} · ${L(dbt.newL)}`], [T("Debts paid", "ديون اندفعت"), `${dbt.paidN} · ${L(dbt.paidL)}`],
+        [T("Owed now (all clients)", "مستحق هلق (كل الزباين)"), `${dbt.openN} · ${L(dbt.openL)}`]]));
+  }
+  $("rpRange").addEventListener("click", e => { const b = e.target.closest("[data-rg]"); if (!b) return; rpRange = b.dataset.rg;
+    if (rpRange === "custom" && !$("rpFrom").value) { $("rpFrom").value = isoDay(Date.now() - 6 * 864e5); $("rpTo").value = isoDay(Date.now()); } renderReports(); });
+  ["rpFrom", "rpTo"].forEach(i => $(i).addEventListener("change", renderReports));
+  $("rpBody").addEventListener("click", e => { const r = e.target.closest("[data-day]"); if (r) dayReport(r.dataset.day); });
+  // Excel opens CSV directly; the BOM keeps Arabic readable.
+  function rpCsv() {
+    const r = rpData; if (!r) return;
+    const q = v => { const t = String(v ?? ""); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    const rows = [["KABAB JIJI report", isoDay(r.from), isoDay(r.to - 1)], [], ["Orders", r.orders], ["Sales total LBP", Math.round(r.totalL)], ["Sales total USD", (r.totalL / R()).toFixed(2)],
+      ["Average order LBP", Math.round(r.avgL)], ["Cash in USD", r.inUSD.toFixed(2)], ["Cash in LBP", Math.round(r.inLBP)], [],
+      ["Best sellers"], ["Item", "Qty", "Total LBP"], ...Object.entries(r.items).sort((a, b) => b[1].qty - a[1].qty).map(([n, v]) => [n, v.qty, Math.round(v.totalL)]), [],
+      ["By person"], ["Name", "Orders", "Sales LBP", "Days closed", "Drawer difference LBP"], ...Object.entries(r.people).map(([n, p]) => [n, p.orders, Math.round(p.totalL), p.closes, p.closes ? Math.round(p.diff) : ""]), [],
+      ["Daily closings"], ["Day", "Expected USD", "Expected LBP", "Counted USD", "Counted LBP", "Drawer difference LBP", "Closed by", "Loaves not rung up", "Kept bread"],
+      ...r.days.filter(d => d.summary).map(d => { const h = d.summary; return [isoDay(d.openedAt), h.expUSD ?? "", h.expLBP ?? "", h.countedUSD ?? "", h.countedLBP ?? "", h.drawerDiff ?? "", h.closedBy || "", h.breadMissing ?? "", h.breadLeftLoaves ?? ""]; }), [],
+      ["Bread (loaves)"], ["Left from day before", r.bread.carriedIn], ["New bread received", r.bread.received], ["Moved to main shop", r.bread.moved], ["Waste", r.bread.wasted],
+      ["Kept for next day", r.bread.carriedOver], ["Loaves used", r.bread.used], ["Sandwiches sold", r.bread.sandwiches], ["Loaves not rung up", r.bread.missing], [],
+      ["Debts"], ["New", r.debts.newN, Math.round(r.debts.newL)], ["Paid", r.debts.paidN, Math.round(r.debts.paidL)], ["Owed now", r.debts.openN, Math.round(r.debts.openL)], [],
+      ["All sales"], ["Date", "Time", "Order", "Items", "Total LBP", "Paid USD", "Paid LBP", "Change USD", "Change LBP", "By", "Debt"],
+      ...r.sales.map(x => [isoDay(x.t), new Date(x.t).toTimeString().slice(0, 5), x.no || "", x.lines.map(l => l.qty + "x " + l.name).join("; "), Math.round(x.totalL), x.paidUSD || 0, x.paidLBP || 0, x.changeUSD || 0, x.changeLBP || 0, x.byName || "", x.debt ? (x.label || "yes") : ""])];
+    const blob = new Blob(["﻿" + rows.map(r => r.map(q).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `kababjiji-report-${isoDay(r.from)}${isoDay(r.from) !== isoDay(r.to - 1) ? "-to-" + isoDay(r.to - 1) : ""}.csv`;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  function rpText() {
+    const r = rpData, d = r.debts, b = r.bread;
+    const top = Object.entries(r.items).sort((a, b) => b[1].qty - a[1].qty).slice(0, 5).map(([n, v]) => `• ${n}: ${v.qty}`).join("\n");
+    const closes = r.days.filter(x => x.summary && x.summary.drawerDiff != null).map(x => `• ${isoDay(x.openedAt)}: ${Calc.verdict(x.summary.drawerDiff, S().tol) === "ok" ? T("correct", "مظبوط") : (x.summary.drawerDiff < 0 ? T("short ", "ناقص ") : T("over ", "زيادة ")) + L(Math.abs(x.summary.drawerDiff))}${x.summary.closedBy ? " (" + x.summary.closedBy + ")" : ""}`).join("\n");
+    return [`*KABAB JIJI* · ${isoDay(r.from)}${isoDay(r.from) !== isoDay(r.to - 1) ? " → " + isoDay(r.to - 1) : ""}`,
+      `${T("Orders", "الطلبات")}: ${r.orders}`, `${T("Sales", "المبيع")}: ${L(r.totalL)} (${U(LtoU(r.totalL))})`, `${T("Average order", "معدّل الطلب")}: ${L(r.avgL)}`,
+      `${T("Cash in", "مصاري فاتت")}: ${U(r.inUSD)} + ${L(r.inLBP)}`, top ? `\n*${T("Best sellers", "الأكتر مبيع")}*\n${top}` : "",
+      closes ? `\n*${T("Drawer", "الصندوق")}*\n${closes}` : "",
+      `\n*${T("Bread", "الخبز")}*: ${T("sandwiches", "سندويشات")} ${b.sandwiches}, ${T("not rung up", "ما انسجلوا")} ${b.missing}, ${T("waste", "تالف")} ${b.wasted}, ${T("moved", "انتقل")} ${b.moved}`,
+      `*${T("Debts", "الديون")}*: ${T("new", "جديدة")} ${L(d.newL)}, ${T("paid", "اندفعت")} ${L(d.paidL)}, ${T("owed now", "مستحق هلق")} ${L(d.openL)}`].filter(Boolean).join("\n");
+  }
+  $("rpCsv").addEventListener("click", () => { if (!rpData) return; rpCsv(); toast(T("Report downloaded", "التقرير نزل")); });
+  $("rpWa").addEventListener("click", () => { if (!rpData) return; window.open("https://wa.me/?text=" + encodeURIComponent(rpText()), "_blank"); });
+
   /* ---------- settings ---------- */
   let editMenu = null;
   function renderSettings() {
@@ -659,9 +782,9 @@
     const d = day();
     if (!d) {
       // An owner who closed the Start-the-day screen can still use Sales, Clients and Settings.
-      const v = skipStart && Store.isOwner() && ["report", "clients", "settings"].includes(currentView) ? currentView : "sell";
+      const v = skipStart && Store.isOwner() && ["report", "clients", "reports", "settings"].includes(currentView) ? currentView : "sell";
       $("dayLabel").textContent = ""; showView(v); renderSell();
-      if (v === "report") renderReport(); if (v === "clients") renderClients(); if (v === "settings") renderSettings();
+      if (v === "report") renderReport(); if (v === "clients") renderClients(); if (v === "reports") renderReports(); if (v === "settings") renderSettings();
       if (!modalOpen() && !(skipStart && Store.isOwner())) {
         // Whoever is on a till that can open the day must fill it in; only an owner can close it with ✕.
         if (Store.account && Store.account.role === "owner") openDayModal();
@@ -679,6 +802,7 @@
     if (currentView === "report") renderReport();
     if (currentView === "settings") renderSettings();
     if (currentView === "clients") renderClients();
+    if (currentView === "reports") renderReports();
   }
 
   // Offline badge: sales are kept on the device and sent when the internet is back.

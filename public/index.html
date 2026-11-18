@@ -23,6 +23,7 @@
       <button data-view="cash" data-owner hidden data-ar="فحص الصندوق">Cash check</button>
       <button data-view="report" data-owner hidden data-ar="المبيعات">Sales</button>
       <button data-view="clients" data-owner hidden data-ar="الزباين والديون">Clients &amp; debts</button>
+      <button data-view="reports" data-owner hidden data-ar="التقارير">Reports</button>
       <button data-view="settings" data-owner hidden data-ar="الإعدادات">Settings</button>
       <span class="demo" id="demoBox" hidden><label for="demoRole" data-ar="تجربة كـ">Demo as</label><select id="demoRole"><option value="owner" data-ar="المالك">Owner</option><option value="cashier" data-ar="كاشير">Cashier</option><option value="pos" data-ar="تيل مشترك">Shared till</option></select></span>
       <button id="btnSwitch" hidden data-ar="غيّر الشخص">Switch user</button>
@@ -143,6 +144,18 @@
         <div class="field"><label for="clSearch" data-ar="فتّش بالاسم أو التلفون">Search name or phone</label><input id="clSearch" autocomplete="off"></div>
         <div id="clients"></div>
       </div>
+    </section>
+
+    <section class="view" id="v-reports" hidden>
+      <div class="panel">
+        <h2 data-ar="التقارير">Reports</h2>
+        <div class="seg" id="rpRange" role="group" style="flex-wrap:wrap">
+          <button data-rg="today" aria-pressed="true" data-ar="اليوم">Today</button><button data-rg="yesterday" aria-pressed="false" data-ar="مبارح">Yesterday</button><button data-rg="week" aria-pressed="false" data-ar="هالجمعة">This week</button><button data-rg="month" aria-pressed="false" data-ar="هالشهر">This month</button><button data-rg="custom" aria-pressed="false" data-ar="تاريخ معيّن">Custom</button>
+        </div>
+        <div class="row" id="rpCustom" hidden style="margin-top:8px"><div class="field"><label for="rpFrom" data-ar="من">From</label><input id="rpFrom" type="date"></div><div class="field"><label for="rpTo" data-ar="لـ">To</label><input id="rpTo" type="date"></div></div>
+        <div class="row" style="margin-top:8px"><button class="btn dark" id="rpCsv" data-ar="نزّل Excel (CSV)">Download for Excel (CSV)</button><button class="btn" id="rpWa" style="border-color:#25d366;color:#128c4a" data-ar="ابعت عالواتساب">Share on WhatsApp</button></div>
+      </div>
+      <div id="rpBody"></div>
     </section>
 
     <section class="view" id="v-settings" hidden>
