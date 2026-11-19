@@ -88,6 +88,20 @@
     return out;
   };
 
+  // Drinks (counted in pieces): count at the start + delivered - sold should be what is counted at the close.
+  // ids: the menu items that are counted. Debt sales are sold too; debt payments sell nothing.
+  C.drinkCheck = (start, added, sales, counted, ids) => {
+    const sold = {};
+    for (const s of sales || []) if (!s.void && !s.debtPay) for (const l of s.lines) sold[l.id] = (sold[l.id] || 0) + l.qty;
+    const out = {};
+    for (const id of ids) {
+      const st = (start || {})[id] || 0, ad = (added || {})[id] || 0, so = sold[id] || 0, exp = st + ad - so;
+      const c = counted && counted[id] != null ? counted[id] : null;
+      out[id] = { start: st, added: ad, sold: so, expected: exp, counted: c, missing: c == null ? null : exp - c };
+    }
+    return out;
+  };
+
   C.verdict = (diff, tol) => Math.abs(diff) <= tol ? "ok" : diff < 0 ? "short" : "over";
 
   if (typeof module !== "undefined" && module.exports) module.exports = C; else root.Calc = C;

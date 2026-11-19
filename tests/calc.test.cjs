@@ -88,3 +88,13 @@ test("debts: bread used and counted as a sale, but no money expected until it is
   assert.strictEqual(s2.expLBP, 1000000 + 1074000);
   assert.strictEqual(s2.breadSold, 0);
 });
+
+test("drinks: start + delivered - sold vs counted", () => {
+  const pep = q => ({ id: "pepsi", name: "Pepsi", qty: q, priceL: 150000, bread: 0 });
+  const sales = [sale([pep(3)], 0, 450000, 0), { ...sale([pep(2)], 0, 0, 0), debt: true }, { ...sale([pep(5)], 0, 750000, 0), void: true }];
+  const r = C.drinkCheck({ pepsi: 24, water: 12 }, { pepsi: 6 }, sales, { pepsi: 23, water: 12 }, ["pepsi", "water"]);
+  assert.strictEqual(r.pepsi.sold, 5);
+  assert.strictEqual(r.pepsi.expected, 25);
+  assert.strictEqual(r.pepsi.missing, 2);
+  assert.strictEqual(r.water.missing, 0);
+});

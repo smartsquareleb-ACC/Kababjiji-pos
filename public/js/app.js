@@ -31,6 +31,12 @@
   const closeModal = () => { $("modalRoot").innerHTML = ""; };
 
   const day = () => Store.currentDay();
+  // Items counted by the piece at the start and close of the day (drinks by default).
+  const isCounted = i => i.count != null ? !!i.count : i.color === "drink";
+  const drinks = () => db.menu.filter(isCounted);
+  const dName = i => esc(AR ? i.ar || i.name : i.name);
+  const drinkFields = (pre, vals) => `<div class="row" style="flex-wrap:wrap">${drinks().map(i => `<div class="field" style="flex:1 1 30%;min-width:96px"><label for="${pre}${i.id}">${dName(i)}</label><input id="${pre}${i.id}" inputmode="numeric" value="${vals ? vals[i.id] ?? "" : ""}"></div>`).join("")}</div>`;
+  const readDrinks = pre => { const o = {}; drinks().forEach(i => { const el = $(pre + i.id); if (el && el.value.trim() !== "") o[i.id] = Math.max(0, Math.round(num(el.value))); }); return o; };
   const sum = () => Calc.summary(day(), db.sales, S().lpb, db.checks);
   const menuLoafL = () => { const it = db.menu.find(i => i.bread > 0); return it ? priceL(it) / it.bread : 0; };
   const bread = () => Calc.breadCheck(day(), sum(), S().lpb, menuLoafL());
@@ -95,6 +101,9 @@
     <h2 style="font-size:15px;margin:12px 0 4px">${T("New bread for today", "خبز جديد لليوم")}</h2>
     <div class="row">${f("odB", T("Bundles", "ربطات"), last ? 0 : 20)}${f("odL", T("Loose loaves", "أرغفة فرط"), 0)}</div>
     <p class="hint" id="odHint"></p><div class="err" id="odErr"></div>
+    ${drinks().length ? `<h2 style="font-size:15px;margin:12px 0 4px">${T("Count the drinks (pieces)", "عدّ المشروبات (حبّة)")}</h2>
+    <p class="hint">${h.drinksLeft ? T("Filled in from yesterday's close. Change it if your count is different.", "معبّى من تسكيرة مبارح. غيّرو إذا عدّك مختلف.") : T("Count every drink in the fridge and the stock.", "عدّ كل المشروبات بالبراد والمخزون.")}</p>
+    ${drinkFields("odD-", h.drinksLeft || null)}<div class="err" id="odDErr"></div>` : ""}
     <h2 style="font-size:15px;margin:12px 0 4px">${T("Cash in the drawer (float)", "مصاري بالصندوق (أول النهار)")}</h2>
     <div class="row"><div class="field"><label for="odU">${T("US$", "دولار")}</label><input id="odU" inputmode="decimal" value="0"></div>
     <div class="field"><label for="odLBP">${T("LBP", "ليرة")}</label><input id="odLBP" inputmode="numeric" value="0"></div></div>
@@ -108,11 +117,13 @@
     if ($("odX")) $("odX").addEventListener("click", () => { skipStart = true; closeModal(); render(); });
     $("odGo").addEventListener("click", async () => {
       const c = calc(); if (c.keep < 0) return;
+      const ds = readDrinks("odD-");
+      if (drinks().some(i => ds[i.id] == null)) { $("odDErr").textContent = T("Count every drink (0 if none)", "عدّ كل المشروبات (0 إذا ما في)"); return; }
       $("odGo").disabled = true;
       const t = Date.now(), moves = [];
       if (c.mv) moves.push({ type: "move", loaves: c.mv, t, note: "from yesterday" });
       if (c.ws) moves.push({ type: "waste", loaves: c.ws, t, note: "from yesterday" });
-      await Store.openDay({ carried: c.left, breadMoves: moves, startBundles: v("odB"), startLoose: v("odL"),
+      await Store.openDay({ drinksStart: ds, drinksAdded: {}, carried: c.left, breadMoves: moves, startBundles: v("odB"), startLoose: v("odL"),
         openUSD: num($("odU").value), openLBP: Math.round(num($("odLBP").value)) });
       closeModal(); render();
     });
@@ -265,6 +276,7 @@
   function renderBread() {
     const d = day(), s = sum(), lv = T("loaves", "رغيف");
     const moved = (d.breadMoves || []).filter(m => m.type === "move").reduce((a, m) => a + m.loaves, 0), wasted = (d.breadMoves || []).filter(m => m.type === "waste").reduce((a, m) => a + m.loaves, 0);
+    renderDrinksPanel();
     $("breadKV").innerHTML = `<dt>${T("Left from yesterday", "باقي من مبارح")}</dt><dd>${d.carried || 0} ${lv}</dd>
     <dt>${T("New bread at the start", "خبز جديد أول النهار")}</dt><dd>${d.startBundles} ${T("bundles", "ربطة")} + ${d.startLoose} ${T("loose", "فرط")}</dd>
     <dt>${T("Added during the day", "انزاد خلال النهار")}</dt><dd>${d.addedLoaves || 0} ${lv}</dd>
@@ -282,6 +294,20 @@
     else if (c.missing < 0) el.innerHTML = `<div class="verdict warn"><div class="h">${T(`${-c.missing} extra loaves on the shelf`, `${-c.missing} رغيف زيادة عالرف`)}</div><p>${T("More bread is left than expected. Check the count, or bread was added without being entered.", "باقي خبز أكتر من المتوقع. راجع العدّ، أو في خبز انزاد وما انسجل.")}</p></div>`;
     else el.innerHTML = `<div class="verdict good"><div class="h">${T("Bread matches sales", "الخبز مظبوط مع البيع")}</div><p>${T(`${c.used} loaves used, ${c.sold} sandwiches sold.`, `انصرف ${c.used} رغيف، وانباع ${c.sold} سندويشة.`)}</p></div>`;
   }
+  function renderDrinksPanel() {
+    const d = day(); if (!d) return;
+    const ids = drinks().map(i => i.id), r = Calc.drinkCheck(d.drinksStart, d.drinksAdded, db.sales, null, ids);
+    $("drinksToday").innerHTML = !d.drinksStart ? `<p class="hint">${T("Drinks were not counted at the start of this day.", "المشروبات ما انعدّت أول هالنهار.")}</p>`
+      : `<dl class="kv">${drinks().map(i => `<dt>${dName(i)}</dt><dd>${r[i.id].expected} <small style="font-weight:500">(${r[i.id].start} + ${r[i.id].added} − ${r[i.id].sold} ${T("sold", "انباع")})</small></dd>`).join("")}</dl>`;
+    if (document.activeElement && document.activeElement.closest && document.activeElement.closest("#drinksAdd")) return;
+    $("drinksAdd").innerHTML = drinkFields("adD-");
+  }
+  $("btnAddDrinks").addEventListener("click", async () => {
+    const add = readDrinks("adD-"), d = day(); if (!d) return;
+    const n = Object.values(add).reduce((a, v) => a + v, 0); if (!n) { toast(T("Enter how many arrived", "اكتب قديش وصل")); return; }
+    const cur = { ...(d.drinksAdded || {}) }; Object.entries(add).forEach(([k, v]) => cur[k] = (cur[k] || 0) + v);
+    await Store.updateDay(d.id, { drinksAdded: cur }); document.activeElement.blur(); $("drinksAdd").innerHTML = ""; toast(T(`Added ${n} drinks`, `انزاد ${n} مشروب`)); render();
+  });
   $("btnAddBread").addEventListener("click", async () => {
     const n = Math.round(num($("addBundles").value)) * S().lpb + Math.round(num($("addLoose").value));
     if (!n) return; await Store.updateDay(day().id, { addedLoaves: (day().addedLoaves || 0) + n });
@@ -389,9 +415,10 @@
       <dt><b>${T("Lira that should be in drawer", "الليرة اللي لازم تكون بالصندوق")}</b></dt><dd><b>${L(s.expLBP)}</b></dd></dl>
       ${h2(T("2. Count the bread left", "2. عدّ الخبز الباقي"))}
       <div class="row">${f("cdB", T("Bundles", "ربطات"), "")}${f("cdL", T("Loose loaves", "أرغفة فرط"), "")}</div><div id="cdBreadV"></div>
-      ${h2(T("3. Count the drawer", "3. عدّ الصندوق"))}
+      ${drinks().length ? h2(T("3. Count the drinks (pieces)", "3. عدّ المشروبات (حبّة)")) + drinkFields("cdD-") + '<div id="cdDrinkV"></div>' : ""}
+      ${h2(T("4. Count the drawer", "4. عدّ الصندوق"))}
       <div class="row">${f("cdU", T("Dollars in drawer (US$)", "دولار بالصندوق"), "", "decimal")}${f("cdLBP", T("Lira in drawer (LBP)", "ليرة بالصندوق"), "")}</div><div id="cdCashV"></div>
-      ${h2(T("4. What to do with the bread left?", "4. شو بدك تعمل بالخبز الباقي؟"))}
+      ${h2(T("5. What to do with the bread left?", "5. شو بدك تعمل بالخبز الباقي؟"))}
       <div class="row">${f("cdMove", T("Move to main shop (loaves)", "نقل عالمحل الرئيسي (أرغفة)"), 0)}${f("cdWaste", T("Waste (loaves)", "تالف (أرغفة)"), 0)}</div>
       <p class="hint" id="cdKeep"></p><div class="err" id="cdErr"></div>
       <div class="row" style="margin-top:10px"><button class="btn" id="cdNo">${T("Cancel", "إلغاء")}</button><button class="btn danger" id="cdGo" disabled>${T("Close the day", "سكّر النهار")}</button></div></div></div>`;
@@ -403,19 +430,26 @@
         cashCount: cashIn ? { usd: num($("cdU").value), lbp: Math.round(num($("cdLBP").value)), t: Date.now() } : null };
       const br = breadIn ? Calc.breadCheck(dd, s, lpb, menuLoafL()) : null, c = cashIn ? Calc.cashCheck(dd, s, R(), br) : null;
       const mv = v("cdMove"), ws = v("cdWaste"), keep = counted - mv - ws;
-      return { breadIn, cashIn, counted, dd, br, c, mv, ws, keep };
+      const dc = readDrinks("cdD-"), drinksIn = drinks().every(i => dc[i.id] != null);
+      const dk = Calc.drinkCheck(d.drinksStart, d.drinksAdded, db.sales, dc, drinks().map(i => i.id));
+      const dMissL = drinks().reduce((a, i) => a + Math.max(0, dk[i.id].missing || 0) * priceL(i), 0);
+      return { breadIn, cashIn, counted, dd, br, c, mv, ws, keep, dc, drinksIn, dk, dMissL };
     };
     const show = () => { const x = calc();
       $("cdBreadV").innerHTML = !x.br ? "" : x.br.invalid ? `<div class="verdict warn"><div class="h">${T("Check the count", "راجع العدّ")}</div><p>${T(`That is more than the ${s.breadTotal} loaves you had today.`, `هيدا أكتر من الـ ${s.breadTotal} رغيف اللي كانوا عندك اليوم.`)}</p></div>`
         : x.br.missing > 0 ? `<div class="verdict bad"><div class="h">${T(`${x.br.missing} loaves not rung up`, `${x.br.missing} رغيف ما انسجلوا`)}</div><p>${T("About", "تقريباً")} ${L(x.br.missingL)} (${U(LtoU(x.br.missingL))})</p></div>`
         : x.br.missing < 0 ? `<div class="verdict warn"><div class="h">${T(`${-x.br.missing} extra loaves`, `${-x.br.missing} رغيف زيادة`)}</div></div>`
         : `<div class="verdict good"><div class="h">${T("Bread matches sales", "الخبز مظبوط مع البيع")}</div></div>`;
+      if ($("cdDrinkV")) $("cdDrinkV").innerHTML = !d.drinksStart ? `<p class="hint">${T("Drinks were not counted at the start of this day, so only today's count is saved.", "المشروبات ما انعدّت أول هالنهار، فبينحفظ عدّ اليوم بس.")}</p>`
+        : `<div class="tbl"><table><thead><tr><th>${T("Drink", "المشروب")}</th><th class="n">${T("Had", "كان")}</th><th class="n">${T("Sold", "انباع")}</th><th class="n">${T("Should be", "لازم")}</th><th class="n">${T("Missing", "ناقص")}</th></tr></thead><tbody>${drinks().map(i => { const r = x.dk[i.id];
+          return `<tr><td>${dName(i)}</td><td class="n">${r.start + r.added}</td><td class="n">${r.sold}</td><td class="n"><b>${r.expected}</b></td><td class="n" style="color:${r.missing > 0 ? "var(--bad)" : r.missing < 0 ? "var(--warn)" : "var(--good)"}">${r.missing == null ? "" : r.missing > 0 ? r.missing : r.missing < 0 ? "+" + -r.missing : "✓"}</td></tr>`; }).join("")}</tbody></table></div>
+          ${x.drinksIn ? x.dMissL > 0 ? `<div class="verdict bad"><div class="h">${T("Drinks missing", "مشروبات ناقصة")}: ${L(x.dMissL)}</div><p>${U(LtoU(x.dMissL))}</p></div>` : `<div class="verdict good"><div class="h">${T("Drinks match sales", "المشروبات مظبوطة مع البيع")}</div></div>` : ""}`;
       $("cdCashV").innerHTML = x.c ? verdictMoney(x.c.diff, T("Drawer", "الصندوق")) : "";
       $("cdKeep").innerHTML = x.breadIn ? T(`Kept for tomorrow: <b>${Math.max(0, x.keep)} loaves</b>`, `بيبقى لبكرا: <b>${Math.max(0, x.keep)} رغيف</b>`) : "";
       $("cdErr").textContent = x.br && x.br.invalid ? T("Fix the bread count", "صلّح عدّ الخبز") : x.keep < 0 ? T(`Only ${x.counted} loaves are left to move or waste.`, `في ${x.counted} رغيف بس باقيين للنقل أو التالف.`) : "";
-      $("cdGo").disabled = !x.breadIn || !x.cashIn || x.keep < 0 || (x.br && x.br.invalid);
+      $("cdGo").disabled = !x.breadIn || !x.cashIn || !x.drinksIn || x.keep < 0 || (x.br && x.br.invalid);
     };
-    ["cdB", "cdL", "cdU", "cdLBP", "cdMove", "cdWaste"].forEach(i => $(i).addEventListener("input", show)); show();
+    ["cdB", "cdL", "cdU", "cdLBP", "cdMove", "cdWaste", ...drinks().map(i => "cdD-" + i.id)].forEach(i => $(i).addEventListener("input", show)); show();
     $("cdNo").addEventListener("click", closeModal);
     $("cdGo").addEventListener("click", async () => {
       if (db.checks.length) { toast(T("Pay or save the open checks as debt first", "ادفع أو سجّل الحسابات المفتوحة كدين أول")); return; }
@@ -425,7 +459,9 @@
       await Store.closeDay(d.id, { salesL: s.totalL, orders: s.orders, sandwiches: s.breadSold, breadMissing: x.br ? x.br.missing : null,
         drawerDiff: x.c ? x.c.diff : null, expUSD: s.expUSD, expLBP: s.expLBP, countedUSD: x.dd.cashCount.usd, countedLBP: x.dd.cashCount.lbp,
         breadCounted: x.counted, closeMove: x.mv, closeWaste: x.ws, breadLeftBundles: Math.floor(x.keep / lpb), breadLeftLoaves: x.keep,
-        rate: R(), debtL: s.debtL, debtPaidL: s.debtPaidL, closedBy: Store.user.name || "" });
+        rate: R(), debtL: s.debtL, debtPaidL: s.debtPaidL, closedBy: Store.user.name || "",
+        drinksLeft: x.dc, drinksMissingL: d.drinksStart ? x.dMissL : null,
+        drinks: d.drinksStart ? Object.fromEntries(drinks().map(i => [i.id, { name: i.name, ar: i.ar || "", ...x.dk[i.id] }])) : null });
       closeModal(); skipStart = false; document.querySelectorAll(".close-area").forEach(a => a.innerHTML = closeBtn()); toast(T("Day closed", "النهار تسكّر")); go("sell");
     });
   }
@@ -439,6 +475,7 @@
       ${row(T("Dollars expected / counted", "دولار متوقع / معدود"), h.expUSD == null ? null : `${U(h.expUSD)} / ${U(h.countedUSD || 0)}`)}
       ${row(T("Lira expected / counted", "ليرة متوقعة / معدودة"), h.expLBP == null ? null : `${L(h.expLBP)} / ${L(h.countedLBP || 0)}`)}
       ${row(T("Drawer", "الصندوق"), h.drawerDiff == null ? T("Not counted", "ما انعدّ") : Calc.verdict(h.drawerDiff, S().tol) === "ok" ? T("Correct", "مظبوط") : (h.drawerDiff < 0 ? T("Short ", "ناقص ") : T("Over ", "زيادة ")) + L(Math.abs(h.drawerDiff)))}
+      ${h.drinks ? row(T("Drinks missing", "مشروبات ناقصة"), Object.values(h.drinks).filter(r => r.missing).map(r => `${esc(AR ? r.ar || r.name : r.name)} ${r.missing > 0 ? r.missing : "+" + -r.missing}`).join("، ") || "✓") + (h.drinksMissingL ? row(T("Drinks missing value", "قيمة المشروبات الناقصة"), L(h.drinksMissingL)) : "") : ""}
       ${row(T("Bread counted at close", "الخبز المعدود عالتسكير"), h.breadCounted)}${row(T("Loaves not rung up", "أرغفة ما انسجلت"), h.breadMissing)}
       ${row(T("Moved to main shop", "انتقل عالمحل الرئيسي"), h.closeMove)}${row(T("Waste", "تالف"), h.closeWaste)}${row(T("Kept for next day", "بقي للنهار الجاي"), h.breadLeftLoaves)}
       ${row(T("Closed by", "سكّر"), h.closedBy ? esc(h.closedBy) : null)}</dl>
@@ -624,6 +661,9 @@
       if (h.breadCounted != null) { b.counted++; b.used += Calc.breadTotal(d, lpb) - h.breadCounted; }
       if (h.drawerDiff != null && h.closedBy) { const p = r.people[h.closedBy] || (r.people[h.closedBy] = { orders: 0, totalL: 0, closes: 0, diff: 0 }); p.closes++; p.diff += h.drawerDiff; }
     }
+    r.drinks = {}; r.drinksMissingL = 0;
+    for (const d of r.days) { const h = d.summary; if (!h || !h.drinks) continue; r.drinksMissingL += h.drinksMissingL || 0;
+      for (const [id, x] of Object.entries(h.drinks)) { const o = r.drinks[id] || (r.drinks[id] = { name: x.name, ar: x.ar, sold: 0, missing: 0 }); o.sold += x.sold || 0; o.missing += x.missing || 0; } }
     const all = db.allDebts && db.allDebts.length ? db.allDebts : db.debts;
     const nd = all.filter(d => d.t >= from && d.t < to), pd = all.filter(d => d.paidAt && d.paidAt >= from && d.paidAt < to);
     r.debts = { newN: nd.length, newL: nd.reduce((a, d) => a + d.totalL, 0), paidN: pd.length, paidL: pd.reduce((a, d) => a + d.totalL, 0), openN: db.debts.length, openL: db.debts.reduce((a, d) => a + d.totalL, 0) };
@@ -668,6 +708,9 @@
         [T("Moved to main shop", "انتقل عالمحل الرئيسي"), b.moved], [T("Waste", "تالف"), b.wasted], [T("Kept for the next day", "بقي للنهار الجاي"), b.carriedOver],
         [T("Loaves used (from counts)", "أرغفة انصرفت (من العدّ)"), b.counted ? b.used : "–"], [T("Sandwiches sold", "سندويشات انباعت"), b.sandwiches],
         [T("Loaves not rung up", "أرغفة ما انسجلت"), b.missing > 0 ? `<span style="color:var(--bad)">${b.missing}</span>` : b.missing]]) + `<p class="hint">${T("Counted in loaves, from closed days.", "بالأرغفة، من الأيام المسكّرة.")}</p>`) +
+      (Object.keys(r.drinks).length ? P(T("Drinks (pieces)", "المشروبات (حبّة)"), tbl([[T("Drink", "المشروب")], [T("Sold", "انباع"), 1], [T("Missing", "ناقص"), 1]],
+        Object.values(r.drinks).map(x => `<tr><td>${esc(AR ? x.ar || x.name : x.name)}</td><td class="n">${x.sold}</td><td class="n" style="color:${x.missing > 0 ? "var(--bad)" : "inherit"}">${x.missing}</td></tr>`)) +
+        (r.drinksMissingL ? `<p class="hint">${T("Value of missing drinks", "قيمة المشروبات الناقصة")}: <b>${L(r.drinksMissingL)}</b></p>` : "")) : "") +
       P(T("Debts", "الديون"), kv([
         [T("New debts", "ديون جديدة"), `${dbt.newN} · ${L(dbt.newL)}`], [T("Debts paid", "ديون اندفعت"), `${dbt.paidN} · ${L(dbt.paidL)}`],
         [T("Owed now (all clients)", "مستحق هلق (كل الزباين)"), `${dbt.openN} · ${L(dbt.openL)}`]]));
@@ -688,6 +731,7 @@
       ...r.days.filter(d => d.summary).map(d => { const h = d.summary; return [isoDay(d.openedAt), h.expUSD ?? "", h.expLBP ?? "", h.countedUSD ?? "", h.countedLBP ?? "", h.drawerDiff ?? "", h.closedBy || "", h.breadMissing ?? "", h.breadLeftLoaves ?? ""]; }), [],
       ["Bread (loaves)"], ["Left from day before", r.bread.carriedIn], ["New bread received", r.bread.received], ["Moved to main shop", r.bread.moved], ["Waste", r.bread.wasted],
       ["Kept for next day", r.bread.carriedOver], ["Loaves used", r.bread.used], ["Sandwiches sold", r.bread.sandwiches], ["Loaves not rung up", r.bread.missing], [],
+      ["Drinks (pieces)"], ["Drink", "Sold", "Missing"], ...Object.values(r.drinks).map(x => [x.name, x.sold, x.missing]), ["Value of missing drinks LBP", Math.round(r.drinksMissingL)], [],
       ["Debts"], ["New", r.debts.newN, Math.round(r.debts.newL)], ["Paid", r.debts.paidN, Math.round(r.debts.paidL)], ["Owed now", r.debts.openN, Math.round(r.debts.openL)], [],
       ["All sales"], ["Date", "Time", "Order", "Items", "Total LBP", "Paid USD", "Paid LBP", "Change USD", "Change LBP", "By", "Debt"],
       ...r.sales.map(x => [isoDay(x.t), new Date(x.t).toTimeString().slice(0, 5), x.no || "", x.lines.map(l => l.qty + "x " + l.name).join("; "), Math.round(x.totalL), x.paidUSD || 0, x.paidLBP || 0, x.changeUSD || 0, x.changeLBP || 0, x.byName || "", x.debt ? (x.label || "yes") : ""])];
@@ -743,12 +787,12 @@
     $("nsName").value = ""; $("nsPin").value = ""; document.activeElement.blur(); toast(T(`${name} added`, `انزاد ${name}`)); render();
   });
   function renderMenuEdit() {
-    $("menuEdit").innerHTML = `<span class="hd">${T("Name", "الاسم")}</span><span class="hd">${T("Arabic", "بالعربي")}</span><span class="hd">${T("Price", "السعر")}</span><span class="hd">${T("Currency", "العملة")}</span><span class="hd">${T("Bread", "خبز")}</span><span class="hd"></span>` +
+    $("menuEdit").innerHTML = `<span class="hd">${T("Name", "الاسم")}</span><span class="hd">${T("Arabic", "بالعربي")}</span><span class="hd">${T("Price", "السعر")}</span><span class="hd">${T("Currency", "العملة")}</span><span class="hd">${T("Bread", "خبز")}</span><span class="hd">${T("Count", "عدّ")}</span><span class="hd"></span>` +
       editMenu.map((i, k) => `<input id="me-n-${k}" value="${esc(i.name)}" aria-label="Name"><input id="me-a-${k}" value="${esc(i.ar || "")}" dir="rtl" aria-label="Arabic name">
       <input id="me-p-${k}" value="${i.amount}" inputmode="decimal" aria-label="Price"><select id="me-c-${k}" aria-label="Currency"><option ${i.cur === "USD" ? "selected" : ""}>USD</option><option ${i.cur === "LBP" ? "selected" : ""}>LBP</option></select>
-      <input id="me-b-${k}" value="${i.bread || 0}" inputmode="numeric" aria-label="Loaves used"><button class="mini" data-del="${k}" aria-label="Remove item">✕</button>`).join("");
+      <input id="me-b-${k}" value="${i.bread || 0}" inputmode="numeric" aria-label="Loaves used"><label style="display:flex;gap:4px;align-items:center;font-size:13px"><input type="checkbox" id="me-k-${k}" ${isCounted(i) ? "checked" : ""} style="width:22px;height:22px">${T("pieces", "بالحبّة")}</label><button class="mini" data-del="${k}" aria-label="Remove item">✕</button>`).join("");
   }
-  const readMenuEdit = () => editMenu.map((i, k) => ({ ...i, name: $("me-n-" + k).value.trim() || "Item", ar: $("me-a-" + k).value.trim(), amount: num($("me-p-" + k).value), cur: $("me-c-" + k).value, bread: Math.max(0, Math.round(num($("me-b-" + k).value))) }));
+  const readMenuEdit = () => editMenu.map((i, k) => ({ ...i, name: $("me-n-" + k).value.trim() || "Item", ar: $("me-a-" + k).value.trim(), amount: num($("me-p-" + k).value), cur: $("me-c-" + k).value, bread: Math.max(0, Math.round(num($("me-b-" + k).value))), count: $("me-k-" + k).checked }));
   $("menuEdit").addEventListener("click", e => { const b = e.target.closest("[data-del]"); if (!b) return; editMenu = readMenuEdit(); editMenu.splice(+b.dataset.del, 1); renderMenuEdit(); });
   $("btnAddItem").addEventListener("click", () => { editMenu = readMenuEdit(); editMenu.push({ id: Store.uid(), name: "New item", ar: "", amount: 100000, cur: "LBP", bread: 0, color: "side" }); renderMenuEdit(); });
   $("btnSaveMenu").addEventListener("click", async () => { await Store.saveMenu(readMenuEdit().map(i => ({ ...i, color: i.color || (i.bread > 0 ? "meat" : "side") }))); document.activeElement.blur(); toast(T("Menu saved on all devices", "المنيو انحفظ على كل الأجهزة")); render(); });
