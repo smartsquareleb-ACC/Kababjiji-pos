@@ -90,9 +90,12 @@
 
   // Drinks (counted in pieces): count at the start + delivered - sold should be what is counted at the close.
   // ids: the menu items that are counted. Debt sales are sold too; debt payments sell nothing.
-  C.drinkCheck = (start, added, sales, counted, ids) => {
-    const sold = {};
-    for (const s of sales || []) if (!s.void && !s.debtPay) for (const l of s.lines) sold[l.id] = (sold[l.id] || 0) + l.qty;
+  // alias: old item id -> the item it is now counted as (Pepsi, 7Up, Diet, Mirinda -> one "Soft Drink").
+  C.regroup = (o, alias) => { if (!o) return o; const r = {}; for (const [k, v] of Object.entries(o)) { const id = (alias && alias[k]) || k; r[id] = (r[id] || 0) + v; } return r; };
+  C.drinkCheck = (start, added, sales, counted, ids, alias) => {
+    const sold = {}, A = id => (alias && alias[id]) || id;
+    start = C.regroup(start, alias); added = C.regroup(added, alias); counted = C.regroup(counted, alias);
+    for (const s of sales || []) if (!s.void && !s.debtPay) for (const l of s.lines) sold[A(l.id)] = (sold[A(l.id)] || 0) + l.qty;
     const out = {};
     for (const id of ids) {
       const st = (start || {})[id] || 0, ad = (added || {})[id] || 0, so = sold[id] || 0, exp = st + ad - so;
@@ -101,6 +104,22 @@
     }
     return out;
   };
+
+  // Soft drinks are one item: these names on the menu are folded into it.
+  C.SOFT_RE = /pepsi|7\s*-?\s*up|seven\s*up|diet|mirinda|miranda|soft\s*drink|بيبسي|سفن|دايت|ميرندا|ميريندا/i;
+  // Returns the menu with Pepsi, 7Up, Diet, Mirinda... replaced by one "Soft Drink" (or null if nothing to change).
+  C.mergeSoft = menu => {
+    const isSoft = i => i.id !== "soft" && (i.color === "drink" || i.count) && !i.bread && C.SOFT_RE.test(i.name + " " + (i.ar || ""));
+    const olds = menu.filter(isSoft); if (!olds.length) return null;
+    const cur = menu.find(i => i.id === "soft"), first = olds[0];
+    const soft = { ...(cur || { id: "soft", name: "Soft Drink", ar: "سوفت درينك", amount: first.amount, cur: first.cur, bread: 0, color: "drink", count: true }) };
+    soft.aliases = [...new Set([...(soft.aliases || []), ...olds.map(i => i.id)])];
+    const out = []; let put = !!cur;
+    for (const i of menu) { if (i.id === "soft") out.push(soft); else if (isSoft(i)) { if (!put) { out.push(soft); put = true; } } else out.push(i); }
+    return out;
+  };
+  // old id -> new id, from the aliases kept on menu items.
+  C.aliasMap = menu => { const a = { pepsi: "soft", "7up": "soft", mirinda: "soft", diet: "soft" }; for (const i of menu || []) for (const x of i.aliases || []) a[x] = i.id; for (const i of menu || []) delete a[i.id]; return a; };
 
   C.verdict = (diff, tol) => Math.abs(diff) <= tol ? "ok" : diff < 0 ? "short" : "over";
 

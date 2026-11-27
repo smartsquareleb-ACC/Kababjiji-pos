@@ -98,3 +98,30 @@ test("drinks: start + delivered - sold vs counted", () => {
   assert.strictEqual(r.pepsi.missing, 2);
   assert.strictEqual(r.water.missing, 0);
 });
+
+test("soft drinks: Pepsi, 7Up, Diet, Mirinda become one Soft Drink", () => {
+  const menu = [
+    { id: "meat", name: "Meat Shawarma", bread: 1, color: "meat" },
+    { id: "pepsi", name: "Pepsi", ar: "بيبسي", amount: 150000, cur: "LBP", bread: 0, color: "drink" },
+    { id: "7up", name: "7Up", amount: 150000, cur: "LBP", bread: 0, color: "drink" },
+    { id: "x1", name: "Diet", amount: 150000, cur: "LBP", bread: 0, color: "side", count: true },
+    { id: "mirinda", name: "Mirinda", amount: 150000, cur: "LBP", bread: 0, color: "drink" },
+    { id: "almaza", name: "Almaza", amount: 150000, cur: "LBP", bread: 0, color: "drink" },
+    { id: "water", name: "Water", amount: 50000, cur: "LBP", bread: 0, color: "drink" }
+  ];
+  const m = C.mergeSoft(menu);
+  assert.deepStrictEqual(m.map(i => i.id), ["meat", "soft", "almaza", "water"]);
+  assert.deepStrictEqual(m[1].aliases, ["pepsi", "7up", "x1", "mirinda"]);
+  assert.strictEqual(m[1].amount, 150000);
+  assert.strictEqual(C.mergeSoft(m), null);
+  const al = C.aliasMap(m);
+  // A day opened with per-brand counts still checks out against the one Soft Drink count.
+  const line = (id, q) => ({ id, name: id, qty: q, priceL: 150000, bread: 0 });
+  const sales = [sale([line("pepsi", 2), line("soft", 3)], 0, 750000, 0), sale([line("x1", 1)], 0, 150000, 0)];
+  const r = C.drinkCheck({ pepsi: 10, "7up": 5, x1: 3, water: 4 }, { soft: 6 }, sales, { soft: 17, water: 4 }, ["soft", "water"], al);
+  assert.strictEqual(r.soft.start, 18);
+  assert.strictEqual(r.soft.sold, 6);
+  assert.strictEqual(r.soft.expected, 18);
+  assert.strictEqual(r.soft.missing, 1);
+  assert.strictEqual(r.water.missing, 0);
+});

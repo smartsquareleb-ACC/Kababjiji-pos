@@ -19,7 +19,8 @@
   const fmtTime = t => new Date(t).toLocaleTimeString(loc(), { hour: "2-digit", minute: "2-digit" });
   const fmtDate = t => new Date(t).toLocaleDateString(loc(), { weekday: "short", day: "numeric", month: "short" });
   // Item name in the current language (lines keep the English name; Arabic comes from the menu).
-  const nameOf = l => { if (!AR) return l.name; const it = db.menu.find(i => i.id === l.id); return (it && it.ar) || l.name; };
+  // Old Pepsi / 7Up / Diet / Mirinda lines show as "Soft Drink".
+  const nameOf = l => { const al = Calc.aliasMap(db.menu)[l.id], it = db.menu.find(i => i.id === (al || l.id)); if (!AR) return al && it ? it.name : l.name; return (it && it.ar) || l.name; };
   function applyLang() {
     document.documentElement.lang = AR ? "ar" : "en"; document.documentElement.dir = AR ? "rtl" : "ltr";
     document.querySelectorAll("[data-ar]").forEach(el => { if (el.dataset.en == null) el.dataset.en = el.textContent; el.textContent = AR ? el.dataset.ar : el.dataset.en; });
@@ -34,6 +35,8 @@
   // Items counted by the piece at the start and close of the day (drinks by default).
   const isCounted = i => i.count != null ? !!i.count : i.color === "drink";
   const drinks = () => db.menu.filter(isCounted);
+  // Old drink ids (Pepsi, 7Up, Diet, Mirinda) now counted as one "Soft Drink".
+  const alias = () => Calc.aliasMap(db.menu);
   const dName = i => esc(AR ? i.ar || i.name : i.name);
   const drinkFields = (pre, vals) => `<div class="row" style="flex-wrap:wrap">${drinks().map(i => `<div class="field" style="flex:1 1 30%;min-width:96px"><label for="${pre}${i.id}">${dName(i)}</label><input id="${pre}${i.id}" inputmode="numeric" value="${vals ? vals[i.id] ?? "" : ""}"></div>`).join("")}</div>`;
   const readDrinks = pre => { const o = {}; drinks().forEach(i => { const el = $(pre + i.id); if (el && el.value.trim() !== "") o[i.id] = Math.max(0, Math.round(num(el.value))); }); return o; };
@@ -103,7 +106,7 @@
     <p class="hint" id="odHint"></p><div class="err" id="odErr"></div>
     ${drinks().length ? `<h2 style="font-size:15px;margin:12px 0 4px">${T("Count the drinks (pieces)", "عدّ المشروبات (حبّة)")}</h2>
     <p class="hint">${h.drinksLeft ? T("Filled in from yesterday's close. Change it if your count is different.", "معبّى من تسكيرة مبارح. غيّرو إذا عدّك مختلف.") : T("Count every drink in the fridge and the stock.", "عدّ كل المشروبات بالبراد والمخزون.")}</p>
-    ${drinkFields("odD-", h.drinksLeft || null)}<div class="err" id="odDErr"></div>` : ""}
+    ${drinkFields("odD-", Calc.regroup(h.drinksLeft, alias()) || null)}<div class="err" id="odDErr"></div>` : ""}
     <h2 style="font-size:15px;margin:12px 0 4px">${T("Cash in the drawer (float)", "مصاري بالصندوق (أول النهار)")}</h2>
     <div class="row"><div class="field"><label for="odU">${T("US$", "دولار")}</label><input id="odU" inputmode="decimal" value="0"></div>
     <div class="field"><label for="odLBP">${T("LBP", "ليرة")}</label><input id="odLBP" inputmode="numeric" value="0"></div></div>
@@ -179,7 +182,7 @@
     if (b.dataset.check === activeCheck) return;
     if (!activeCheck && cartLines().length) { toast(T("Finish or save the current order first", "خلّص أو احفظ الطلب الحالي أول")); return; }
     const c = checkOf(b.dataset.check); if (!c) return;
-    activeCheck = c.id; cart = {}; c.lines.forEach(l => { if (db.menu.some(i => i.id === l.id)) cart[l.id] = l.qty; });
+    activeCheck = c.id; cart = {}; c.lines.forEach(l => { const id = alias()[l.id] || l.id; if (db.menu.some(i => i.id === id)) cart[id] = (cart[id] || 0) + l.qty; });
     $("paidUSD").value = ""; $("paidLBP").value = ""; changeMode = "lbp"; renderSell();
   });
   $("btnCheck").addEventListener("click", () => {
@@ -296,7 +299,7 @@
   }
   function renderDrinksPanel() {
     const d = day(); if (!d) return;
-    const ids = drinks().map(i => i.id), r = Calc.drinkCheck(d.drinksStart, d.drinksAdded, db.sales, null, ids);
+    const ids = drinks().map(i => i.id), r = Calc.drinkCheck(d.drinksStart, d.drinksAdded, db.sales, null, ids, alias());
     $("drinksToday").innerHTML = !d.drinksStart ? `<p class="hint">${T("Drinks were not counted at the start of this day.", "المشروبات ما انعدّت أول هالنهار.")}</p>`
       : `<dl class="kv">${drinks().map(i => `<dt>${dName(i)}</dt><dd>${r[i.id].expected} <small style="font-weight:500">(${r[i.id].start} + ${r[i.id].added} − ${r[i.id].sold} ${T("sold", "انباع")})</small></dd>`).join("")}</dl>`;
     if (document.activeElement && document.activeElement.closest && document.activeElement.closest("#drinksAdd")) return;
@@ -431,7 +434,7 @@
       const br = breadIn ? Calc.breadCheck(dd, s, lpb, menuLoafL()) : null, c = cashIn ? Calc.cashCheck(dd, s, R(), br) : null;
       const mv = v("cdMove"), ws = v("cdWaste"), keep = counted - mv - ws;
       const dc = readDrinks("cdD-"), drinksIn = drinks().every(i => dc[i.id] != null);
-      const dk = Calc.drinkCheck(d.drinksStart, d.drinksAdded, db.sales, dc, drinks().map(i => i.id));
+      const dk = Calc.drinkCheck(d.drinksStart, d.drinksAdded, db.sales, dc, drinks().map(i => i.id), alias());
       const dMissL = drinks().reduce((a, i) => a + Math.max(0, dk[i.id].missing || 0) * priceL(i), 0);
       return { breadIn, cashIn, counted, dd, br, c, mv, ws, keep, dc, drinksIn, dk, dMissL };
     };
@@ -661,9 +664,10 @@
       if (h.breadCounted != null) { b.counted++; b.used += Calc.breadTotal(d, lpb) - h.breadCounted; }
       if (h.drawerDiff != null && h.closedBy) { const p = r.people[h.closedBy] || (r.people[h.closedBy] = { orders: 0, totalL: 0, closes: 0, diff: 0 }); p.closes++; p.diff += h.drawerDiff; }
     }
-    r.drinks = {}; r.drinksMissingL = 0;
+    r.drinks = {}; r.drinksMissingL = 0; const al = alias();
     for (const d of r.days) { const h = d.summary; if (!h || !h.drinks) continue; r.drinksMissingL += h.drinksMissingL || 0;
-      for (const [id, x] of Object.entries(h.drinks)) { const o = r.drinks[id] || (r.drinks[id] = { name: x.name, ar: x.ar, sold: 0, missing: 0 }); o.sold += x.sold || 0; o.missing += x.missing || 0; } }
+      for (const [id0, x0] of Object.entries(h.drinks)) { const id = al[id0] || id0, it = db.menu.find(i => i.id === id), x = it ? { ...x0, name: it.name, ar: it.ar } : x0;
+        const o = r.drinks[id] || (r.drinks[id] = { name: x.name, ar: x.ar, sold: 0, missing: 0 }); o.sold += x.sold || 0; o.missing += x.missing || 0; } }
     const all = db.allDebts && db.allDebts.length ? db.allDebts : db.debts;
     const nd = all.filter(d => d.t >= from && d.t < to), pd = all.filter(d => d.paidAt && d.paidAt >= from && d.paidAt < to);
     r.debts = { newN: nd.length, newL: nd.reduce((a, d) => a + d.totalL, 0), paidN: pd.length, paidL: pd.reduce((a, d) => a + d.totalL, 0), openN: db.debts.length, openL: db.debts.reduce((a, d) => a + d.totalL, 0) };
