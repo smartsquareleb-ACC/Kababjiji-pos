@@ -9,9 +9,7 @@
     { id: "meat", name: "Meat Shawarma", ar: "شاورما لحمة", amount: 6, cur: "USD", bread: 1, color: "meat", big: true, order: 1 },
     { id: "chicken", name: "Chicken Shawarma", ar: "شاورما دجاج", amount: 6, cur: "USD", bread: 1, color: "chicken", big: true, order: 2 },
     { id: "fries", name: "Fries", ar: "بطاطا", amount: 350000, cur: "LBP", bread: 0, color: "side", order: 3 },
-    { id: "pepsi", name: "Pepsi", ar: "بيبسي", amount: 150000, cur: "LBP", bread: 0, color: "drink", order: 4 },
-    { id: "7up", name: "7Up", ar: "سفن أب", amount: 150000, cur: "LBP", bread: 0, color: "drink", order: 5 },
-    { id: "mirinda", name: "Mirinda", ar: "ميرندا", amount: 150000, cur: "LBP", bread: 0, color: "drink", order: 6 },
+    { id: "soft", name: "Soft Drink", ar: "سوفت درينك", amount: 150000, cur: "LBP", bread: 0, color: "drink", count: true, order: 4, aliases: ["pepsi", "7up", "mirinda"] },
     { id: "almaza", name: "Almaza", ar: "ألمازة", amount: 150000, cur: "LBP", bread: 0, color: "drink", order: 7 },
     { id: "water", name: "Water", ar: "مياه", amount: 50000, cur: "LBP", bread: 0, color: "drink", order: 8 }
   ];
@@ -86,6 +84,7 @@
       users: [{ id: "demo-owner", name: "Owner", email: "owner@demo", role: "owner" }, { id: "demo-cashier", name: "Abdallah", email: "abdallah@demo", role: "cashier" },
         { id: "demo-pos", name: "Shop till", email: "pos@demo", role: "owner", pos: true }], staff: DEFAULT_STAFF.map(x => ({ ...x })), debts: [], allDebts: [] };
     Object.assign(db, s);
+    const m = window.Calc && Calc.mergeSoft(db.menu); if (m) { db.menu = m.map((x, i) => ({ ...x, order: i + 1 })); demoSave(); }
   }
   function demoSave() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
 
@@ -136,6 +135,8 @@
     await Promise.all(jobs);
     // First owner login on a new project: put in the starting menu and settings.
     if (owner && !db.menu.length) await Store.saveMenu(DEFAULT_MENU.map(x => ({ ...x })));
+    // Pepsi, 7Up, Diet, Mirinda... are sold and counted as one "Soft Drink".
+    if (owner && window.Calc) { const m = Calc.mergeSoft(db.menu); if (m) await Store.saveMenu(m); }
     // Once: put in the PIN people for the shared till.
     if (owner && !db.staff.length && !db.settings.staffSeeded) {
       const b = fs.batch(); DEFAULT_STAFF.forEach(({ id, ...x }) => b.set(fs.collection("staff").doc(id), x));
